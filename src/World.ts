@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { SimplexNoise } from 'three/examples/jsm/math/SimplexNoise.js';
 
 const geometry = new THREE.BoxGeometry();
 const material = new THREE.MeshLambertMaterial({ color: 0x00d000 });
@@ -10,7 +11,14 @@ type InstanceData = {
 
 export class World extends THREE.Group {
     data: InstanceData[][][] = [];
-    threshold = 0.5;
+    params = {
+        terrain: {
+            scale: 30,
+            magnitude: 0.5,
+            offset: 0.2
+        }
+    };
+
 	public size; 
 
 	constructor(size = { width: 64, height: 32 }) {
@@ -19,14 +27,15 @@ export class World extends THREE.Group {
 	}
 
     generate() {
+        this.initializeTerrain();
         this.generateTerrain();
         this.generateMeshes();
     }
 
     /**
-     * Generates the terrain data
+     * Initializes the terrain data
      */
-    generateTerrain() {
+    initializeTerrain() {
         this.data = [];
         for (let x = 0; x < this.size.width; x++) {
             const slice = [];
@@ -34,13 +43,37 @@ export class World extends THREE.Group {
                 const row: InstanceData[] = [];
                 for (let z = 0; z < this.size.width; z++) {
                     row.push({
-                        id: Math.random() > this.threshold ? 1 : 0,
+                        id: 0,
                         instanceId: null
                     });
                 }
                 slice.push(row);
             }
             this.data.push(slice);
+        }
+    }
+
+    /**
+     * Generates the terrain data
+     */
+    generateTerrain() {
+        const simplex = new SimplexNoise();
+        for (let x = 0; x < this.size.width; x++) {
+            for (let z = 0; z < this.size.width; z++) {
+                const value = simplex.noise(
+                    x / this.params.terrain.scale, 
+                    z / this.params.terrain.scale
+                );
+
+                const scaledNoise = this.params.terrain.offset + this.params.terrain.magnitude * value;
+
+                let height = Math.floor(this.size.height * scaledNoise);
+                height = Math.max(0, Math.min(height, this.size.height - 1));
+
+                for (let y = 0; y <= height; y++) {
+                    this.setBlockId(x, y, z, 1);
+                }
+            }
         }
     }
 
@@ -82,6 +115,15 @@ export class World extends THREE.Group {
             return this.data[x][y][z];
         } else {
             return null;
+        }
+    }
+
+    /**
+     * Sets the block id at (x, y, z)
+     */
+    setBlockId(x: number, y: number, z: number, id: number) {
+        if (this.inBounds(x, y, z)) {
+            this.data[x][y][z].id = id;
         }
     }
 
