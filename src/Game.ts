@@ -36,7 +36,7 @@ export default class Game {
 		this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 		this.renderer.setPixelRatio(window.devicePixelRatio);
 		this.renderer.setSize(window.innerWidth, window.innerHeight);
-		this.renderer.setClearColor(0x80a0e0);
+		this.renderer.setClearColor(0x80abfe);
 
 		document.body.appendChild(this.renderer.domElement);
 
@@ -104,8 +104,10 @@ export default class Game {
 			this.draw();
 		});
 
-		// this.cube.rotation.x += 0.01;
-		// this.cube.rotation.y += 0.01;
+		if (this.controls) {
+			this.controls.autoRotate = true;
+			this.controls.autoRotateSpeed = 2.0;
+		}
 
 		if (this.stats) this.stats.update();
 
