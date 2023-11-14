@@ -12,11 +12,13 @@ export class Player {
     0.1,
     200
   );
+  cameraHelper = new THREE.CameraHelper(this.camera);
   controls = new PointerLockControls(this.camera, document.body);
 
   constructor(scene: THREE.Scene) {
     this.camera.position.set(32, 64, 32);
     scene.add(this.camera);
+    scene.add(this.cameraHelper);
 
     document.addEventListener("keydown", this.onKeyDown.bind(this));
     document.addEventListener("keyup", this.onKeyUp.bind(this));
@@ -67,6 +69,10 @@ export class Player {
         break;
       case "KeyD":
         this.input.x = this.maxSpeed;
+        break;
+      case "KeyR":
+        this.position.set(32, 64, 32);
+        this.velocity.set(0, 0, 0);
         break;
     }
   }

@@ -9,7 +9,7 @@ import { World } from "./World";
 export default class Game {
   private renderer!: THREE.WebGLRenderer;
   private scene!: THREE.Scene;
-  private camera!: THREE.PerspectiveCamera;
+  private orbitCamera!: THREE.PerspectiveCamera;
 
   private lightAmbient!: THREE.AmbientLight;
 
@@ -37,11 +37,11 @@ export default class Game {
   initScene() {
     this.scene = new THREE.Scene();
 
-    this.camera = new THREE.PerspectiveCamera(
+    this.orbitCamera = new THREE.PerspectiveCamera(
       75,
       window.innerWidth / window.innerHeight
     );
-    this.camera.position.set(-32, 64, -32);
+    this.orbitCamera.position.set(-32, 64, -32);
 
     this.renderer = new THREE.WebGLRenderer();
     this.renderer.shadowMap.enabled = false;
@@ -52,7 +52,10 @@ export default class Game {
 
     document.body.appendChild(this.renderer.domElement);
 
-    this.controls = new OrbitControls(this.camera, this.renderer.domElement);
+    this.controls = new OrbitControls(
+      this.orbitCamera,
+      this.renderer.domElement
+    );
     this.controls.target.set(16, 0, 16);
     this.controls.update();
 
@@ -83,44 +86,20 @@ export default class Game {
 
     this.player = new Player(this.scene);
 
-    createUI(this.world);
+    createUI(this.world, this.player);
 
     this.draw();
   }
 
   initListeners() {
     window.addEventListener("resize", this.onWindowResize.bind(this), false);
-
-    window.addEventListener("keydown", (event) => {
-      const { key } = event;
-
-      switch (key) {
-        case "e":
-          const win = window.open("", "Canvas Image");
-
-          const { domElement } = this.renderer;
-
-          // Makse sure scene is rendered.
-          this.renderer.render(this.scene, this.camera);
-
-          const src = domElement.toDataURL();
-
-          if (!win) return;
-
-          win.document.write(
-            `<img src='${src}' width='${domElement.width}' height='${domElement.height}'>`
-          );
-          break;
-
-        default:
-          break;
-      }
-    });
   }
 
   onWindowResize() {
-    this.camera.aspect = window.innerWidth / window.innerHeight;
-    this.camera.updateProjectionMatrix();
+    this.orbitCamera.aspect = window.innerWidth / window.innerHeight;
+    this.orbitCamera.updateProjectionMatrix();
+    this.player.camera.aspect = window.innerWidth / window.innerHeight;
+    this.player.camera.updateProjectionMatrix();
     this.renderer.setSize(window.innerWidth, window.innerHeight);
   }
 
@@ -143,7 +122,10 @@ export default class Game {
 
     if (this.controls) this.controls.update();
 
-    this.renderer.render(this.scene, this.player.camera);
+    this.renderer.render(
+      this.scene,
+      this.player.controls.isLocked ? this.player.camera : this.orbitCamera
+    );
 
     this.previousTime = currentTime;
   }
