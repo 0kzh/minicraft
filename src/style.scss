@@ -8,3 +8,28 @@ body {
 	margin: 0;
 	padding: 0;
 }
+
+@font-face {
+	font-family: 'Minecraft';
+	src: url('/Minecraft.woff') format('woff');
+}
+
+#debug {
+	position: absolute;
+	display: flex;
+	flex-direction: column;
+	top: 64px;
+	left: 16px;
+	color: #fff;
+	font-family: 'Minecraft', mono;
+	-webkit-font-smoothing: antialiased;
+	-moz-osx-font-smoothing: grayscale;
+	z-index: 1000;
+}
+
+.stat {
+	padding: 0px 8px;
+	background: rgba(255, 255, 255, 0.1);
+	width: "100%";
+	text-align: left;
+}

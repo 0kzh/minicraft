@@ -3,6 +3,7 @@ import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import Stats from "three/examples/jsm/libs/stats.module";
 
 import { createUI } from "./GUI";
+import { Player } from "./Player";
 import { World } from "./World";
 
 export default class Game {
@@ -15,7 +16,14 @@ export default class Game {
   private controls!: OrbitControls;
   private stats!: any;
 
+  private world!: World;
+  private player!: Player;
+
+  private previousTime = 0;
+
   constructor() {
+    this.previousTime = performance.now();
+
     this.initScene();
     this.initStats();
     this.initListeners();
@@ -69,11 +77,13 @@ export default class Game {
     ambient.intensity = 0.2;
     this.scene.add(ambient);
 
-    const world = new World();
-    world.generate();
-    this.scene.add(world);
+    this.world = new World();
+    this.world.generate();
+    this.scene.add(this.world);
 
-    createUI(world);
+    this.player = new Player(this.scene);
+
+    createUI(this.world);
 
     this.draw();
   }
@@ -115,9 +125,14 @@ export default class Game {
   }
 
   draw() {
+    const currentTime = performance.now();
+    const deltaTime = (currentTime - this.previousTime) / 1000;
+
     requestAnimationFrame(() => {
       this.draw();
     });
+
+    this.player.applyInputs(deltaTime);
 
     if (this.controls) {
       this.controls.autoRotate = true;
@@ -128,6 +143,8 @@ export default class Game {
 
     if (this.controls) this.controls.update();
 
-    this.renderer.render(this.scene, this.camera);
+    this.renderer.render(this.scene, this.player.camera);
+
+    this.previousTime = currentTime;
   }
 }
