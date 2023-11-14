@@ -31,12 +31,12 @@ export enum BlockID {
 
 export const oreConfig = {
   coal: {
-    scale: { x: 30, y: 30, z: 30 },
-    scarcity: 0.8,
+    scale: { x: 8, y: 8, z: 8 },
+    scarcity: 0.75,
   },
   iron: {
-    scale: { x: 60, y: 60, z: 60 },
-    scarcity: 0.9,
+    scale: { x: 5, y: 5, z: 5 },
+    scarcity: 0.8,
   },
 };
 

@@ -26,9 +26,9 @@ export class World extends THREE.Group {
   params = {
     seed: 0,
     terrain: {
-      scale: 30,
-      magnitude: 0.5,
-      offset: 0.2,
+      scale: 50,
+      magnitude: 0.1,
+      offset: 0.8,
     },
     surface: {
       offset: 4,
@@ -38,7 +38,7 @@ export class World extends THREE.Group {
 
   public size;
 
-  constructor(size = { width: 64, height: 32 }) {
+  constructor(size = { width: 64, height: 64 }) {
     super();
     this.size = size;
   }

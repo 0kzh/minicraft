@@ -33,10 +33,10 @@ export default class Game {
       75,
       window.innerWidth / window.innerHeight
     );
-    this.camera.position.set(-32, 16, -32);
+    this.camera.position.set(-32, 64, -32);
 
     this.renderer = new THREE.WebGLRenderer();
-    this.renderer.shadowMap.enabled = true;
+    this.renderer.shadowMap.enabled = false;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     this.renderer.setPixelRatio(window.devicePixelRatio);
     this.renderer.setSize(window.innerWidth, window.innerHeight);
@@ -120,7 +120,7 @@ export default class Game {
     });
 
     if (this.controls) {
-      this.controls.autoRotate = false;
+      this.controls.autoRotate = true;
       this.controls.autoRotateSpeed = 2.0;
     }
 

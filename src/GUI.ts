@@ -25,17 +25,15 @@ export function createUI(world: World) {
 
     const scaleFolder = resourceFolder.addFolder("Scale");
     scaleFolder
-      .add(oreConfig[resource as keyof typeof oreConfig].scale, "x", 10, 100)
+      .add(oreConfig[resource as keyof typeof oreConfig].scale, "x", 1, 100)
       .name("X Scale");
     scaleFolder
-      .add(oreConfig[resource as keyof typeof oreConfig].scale, "y", 10, 100)
+      .add(oreConfig[resource as keyof typeof oreConfig].scale, "y", 1, 100)
       .name("Y Scale");
     scaleFolder
-      .add(oreConfig[resource as keyof typeof oreConfig].scale, "z", 10, 100)
+      .add(oreConfig[resource as keyof typeof oreConfig].scale, "z", 1, 100)
       .name("Z Scale");
   }
 
-  gui.onChange(() => {
-    world.generate();
-  });
+  gui.add(world, "generate").name("Generate");
 }
