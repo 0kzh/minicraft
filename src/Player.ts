@@ -53,7 +53,8 @@ export class Player {
   }
 
   onKeyDown(event: KeyboardEvent) {
-    if (!this.controls.isLocked) {
+    const validKeys = ["KeyW", "KeyA", "KeyS", "KeyD", "KeyR"];
+    if (validKeys.includes(event.code) && !this.controls.isLocked) {
       this.controls.lock();
     }
 
