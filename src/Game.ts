@@ -59,9 +59,9 @@ export default class Game {
     sun.shadow.camera.top = 40;
     sun.shadow.camera.bottom = -40;
     sun.shadow.camera.near = 0.1;
-    sun.shadow.camera.far = 200;
-    sun.shadow.bias = -0.0001;
-    sun.shadow.mapSize = new THREE.Vector2(2048, 2048);
+    sun.shadow.camera.far = 250;
+    sun.shadow.bias = -0.005;
+    sun.shadow.mapSize = new THREE.Vector2(512, 512);
     this.scene.add(sun);
     this.scene.add(sun.target);
 
@@ -120,7 +120,7 @@ export default class Game {
     });
 
     if (this.controls) {
-      this.controls.autoRotate = true;
+      this.controls.autoRotate = false;
       this.controls.autoRotateSpeed = 2.0;
     }
 
