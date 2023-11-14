@@ -3,6 +3,7 @@ import { SimplexNoise } from "three/examples/jsm/math/SimplexNoise.js";
 
 import {
   AirBlock,
+  BedrockBlock,
   Block,
   BlockID,
   DirtBlock,
@@ -14,7 +15,6 @@ import {
 import { RNG } from "./RNG";
 
 const geometry = new THREE.BoxGeometry();
-const material = new THREE.MeshLambertMaterial();
 
 type InstanceData = {
   block: Block;
@@ -33,6 +33,10 @@ export class World extends THREE.Group {
     surface: {
       offset: 4,
       magnitude: 4,
+    },
+    bedrock: {
+      offset: 1,
+      magnitude: 1,
     },
   };
 
@@ -119,9 +123,15 @@ export class World extends THREE.Group {
           this.params.surface.offset +
           Math.abs(simplex.noise(x, z) * this.params.surface.magnitude);
 
+        const numBedrockBlocks =
+          this.params.bedrock.offset +
+          Math.abs(simplex.noise(x, z) * this.params.bedrock.magnitude);
+
         for (let y = 0; y <= this.size.height; y++) {
           if (y < height) {
-            if (y < height - numSurfaceBlocks) {
+            if (y < numBedrockBlocks) {
+              this.setBlockAt(x, y, z, new BedrockBlock());
+            } else if (y < height - numSurfaceBlocks) {
               if (this.getBlock(x, y, z)?.block.id === BlockID.Air) {
                 this.setBlockAt(x, y, z, new StoneBlock());
               }

@@ -18,6 +18,7 @@ const textures = {
   stone: loadTexture("textures/stone.png"),
   coal: loadTexture("textures/coal_ore.png"),
   iron: loadTexture("textures/iron_ore.png"),
+  bedrock: loadTexture("textures/bedrock.png"),
 };
 
 export enum BlockID {
@@ -27,6 +28,7 @@ export enum BlockID {
   Stone = 3,
   CoalOre = 4,
   IronOre = 5,
+  Bedrock = 6,
 }
 
 export const oreConfig = {
@@ -42,7 +44,6 @@ export const oreConfig = {
 
 export abstract class Block {
   abstract id: BlockID;
-  abstract color: THREE.Color;
   abstract material: THREE.MeshLambertMaterial[];
 }
 
@@ -53,13 +54,11 @@ export abstract class OreBlock extends Block {
 
 export class AirBlock extends Block {
   id = BlockID.Air;
-  color = new THREE.Color(0x000000);
   material = [];
 }
 
 export class GrassBlock extends Block {
   id = BlockID.Grass;
-  color = new THREE.Color(0x559020);
   material = [
     new THREE.MeshLambertMaterial({ map: textures.grassSide }), // right
     new THREE.MeshLambertMaterial({ map: textures.grassSide }), // left
@@ -72,7 +71,6 @@ export class GrassBlock extends Block {
 
 export class DirtBlock extends Block {
   id = BlockID.Dirt;
-  color = new THREE.Color(0x807020);
   material = [
     new THREE.MeshLambertMaterial({ map: textures.dirt }), // right
     new THREE.MeshLambertMaterial({ map: textures.dirt }), // left
@@ -85,7 +83,6 @@ export class DirtBlock extends Block {
 
 export class StoneBlock extends Block {
   id = BlockID.Stone;
-  color = new THREE.Color(0x808080);
   material = [
     new THREE.MeshLambertMaterial({ map: textures.stone }), // right
     new THREE.MeshLambertMaterial({ map: textures.stone }), // left
@@ -96,9 +93,20 @@ export class StoneBlock extends Block {
   ];
 }
 
+export class BedrockBlock extends Block {
+  id = BlockID.Bedrock;
+  material = [
+    new THREE.MeshLambertMaterial({ map: textures.bedrock }), // right
+    new THREE.MeshLambertMaterial({ map: textures.bedrock }), // left
+    new THREE.MeshLambertMaterial({ map: textures.bedrock }), // top
+    new THREE.MeshLambertMaterial({ map: textures.bedrock }), // bottom
+    new THREE.MeshLambertMaterial({ map: textures.bedrock }), // front
+    new THREE.MeshLambertMaterial({ map: textures.bedrock }), // back
+  ];
+}
+
 export const CoalOreBlock = class extends OreBlock {
   id = BlockID.CoalOre;
-  color = new THREE.Color(0x202020);
   scale = oreConfig["coal"].scale;
   scarcity = oreConfig["coal"].scarcity;
   material = [
@@ -113,7 +121,6 @@ export const CoalOreBlock = class extends OreBlock {
 
 export const IronOreBlock = class extends OreBlock {
   id = BlockID.IronOre;
-  color = new THREE.Color(0x806060);
   scale = oreConfig["iron"].scale;
   scarcity = oreConfig["iron"].scarcity;
   material = [
@@ -133,6 +140,7 @@ export const blocks = [
   StoneBlock,
   CoalOreBlock,
   IronOreBlock,
+  BedrockBlock,
 ];
 
 export const resources = [CoalOreBlock, IronOreBlock];
