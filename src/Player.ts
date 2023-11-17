@@ -4,13 +4,15 @@ import { PointerLockControls } from "three/examples/jsm/controls/PointerLockCont
 export class Player {
   height = 1.75;
   radius = 0.5;
-  maxSpeed = 5;
+  maxSpeed = 4.2;
   jumpSpeed = 10;
   onGround = false;
 
   input = new THREE.Vector3();
   velocity = new THREE.Vector3();
   #worldVelocity = new THREE.Vector3();
+
+  spacePressed = false;
 
   camera = new THREE.PerspectiveCamera(
     70,
@@ -38,9 +40,17 @@ export class Player {
 
   applyInputs(dt: number) {
     if (this.controls.isLocked) {
-      console.log("applying inputs");
+      // Normalize the input vector if more than one key is pressed
+      if (this.input.length() > 1) {
+        this.input.normalize().multiplyScalar(this.maxSpeed);
+      }
+
       this.velocity.x = this.input.x;
       this.velocity.z = this.input.z;
+      if (this.spacePressed && this.onGround) {
+        this.velocity.y = this.jumpSpeed;
+      }
+
       this.controls.moveRight(this.velocity.x * dt);
       this.controls.moveForward(this.velocity.z * dt);
       this.position.y += this.velocity.y * dt;
@@ -117,9 +127,7 @@ export class Player {
         this.velocity.set(0, 0, 0);
         break;
       case "Space":
-        if (this.onGround) {
-          this.velocity.y = this.jumpSpeed;
-        }
+        this.spacePressed = true;
         break;
     }
   }
@@ -137,6 +145,9 @@ export class Player {
         break;
       case "KeyD":
         this.input.x = 0;
+        break;
+      case "Space":
+        this.spacePressed = false;
         break;
     }
   }

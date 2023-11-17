@@ -33,7 +33,7 @@ const contactGeometry = new THREE.SphereGeometry(0.05, 6, 6);
 
 export class Physics {
   // Acceleration due to gravity
-  static GRAVITY = -9.8;
+  static GRAVITY = -32;
 
   // Physics simulation rate
   simulationRate = 250;
@@ -54,7 +54,6 @@ export class Physics {
 
     while (this.accumulator >= this.stepSize) {
       player.velocity.y += Physics.GRAVITY * this.stepSize;
-      console.log(player.velocity.y);
       player.applyInputs(this.stepSize);
       this.detectCollisions(player, world);
       this.accumulator -= this.stepSize;
@@ -69,8 +68,6 @@ export class Physics {
 
     const candidates = this.broadPhase(player, world);
     const collisions = this.narrowPhase(candidates, player);
-
-    console.log("collisions", collisions);
 
     if (collisions.length > 0) {
       this.resolveCollisions(collisions, player);
@@ -197,6 +194,11 @@ export class Physics {
       // Adjust position of player so that block and player are no longer overlapping
       const deltaPosition = collision.normal.clone();
       deltaPosition.multiplyScalar(collision.overlap);
+
+      // Don't apply vertical change if player is not on ground
+      if (!player.onGround && deltaPosition.y !== 0) {
+        deltaPosition.y = 0;
+      }
       player.position.add(deltaPosition);
 
       // Get the magnitude of player's velocity along collision normal
