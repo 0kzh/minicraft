@@ -2,9 +2,15 @@ import * as THREE from "three";
 import { PointerLockControls } from "three/examples/jsm/controls/PointerLockControls.js";
 
 export class Player {
-  maxSpeed = 15;
+  height = 1.75;
+  radius = 0.5;
+  maxSpeed = 5;
+  jumpSpeed = 10;
+  onGround = false;
+
   input = new THREE.Vector3();
   velocity = new THREE.Vector3();
+  #worldVelocity = new THREE.Vector3();
 
   camera = new THREE.PerspectiveCamera(
     70,
@@ -13,12 +19,18 @@ export class Player {
     200
   );
   cameraHelper = new THREE.CameraHelper(this.camera);
+  boundsHelper = new THREE.Mesh(
+    new THREE.CylinderGeometry(this.radius, this.radius, this.height, 16),
+    new THREE.MeshBasicMaterial({ wireframe: true })
+  );
   controls = new PointerLockControls(this.camera, document.body);
 
   constructor(scene: THREE.Scene) {
     this.camera.position.set(32, 64, 32);
+    this.boundsHelper.visible = false;
     scene.add(this.camera);
     scene.add(this.cameraHelper);
+    scene.add(this.boundsHelper);
 
     document.addEventListener("keydown", this.onKeyDown.bind(this));
     document.addEventListener("keyup", this.onKeyUp.bind(this));
@@ -26,10 +38,12 @@ export class Player {
 
   applyInputs(dt: number) {
     if (this.controls.isLocked) {
+      console.log("applying inputs");
       this.velocity.x = this.input.x;
       this.velocity.z = this.input.z;
       this.controls.moveRight(this.velocity.x * dt);
       this.controls.moveForward(this.velocity.z * dt);
+      this.position.y += this.velocity.y * dt;
     }
 
     const posX = document.getElementById("player-pos-x");
@@ -46,6 +60,33 @@ export class Player {
     if (posZ) {
       posZ.innerHTML = `z: ${this.position.z.toFixed(3)}`;
     }
+  }
+
+  /**
+   * Update the player's bounding cylinder helper
+   */
+  updateBoundsHelper() {
+    this.boundsHelper.position.copy(this.camera.position);
+    this.boundsHelper.position.y -= this.height / 2; // set to eye level
+  }
+
+  /*
+   * Returns the velocity of the player in world coordinates
+   */
+  get worldVelocity() {
+    this.#worldVelocity.copy(this.velocity);
+    this.#worldVelocity.applyEuler(
+      new THREE.Euler(0, this.camera.rotation.y, 0)
+    );
+    return this.#worldVelocity;
+  }
+
+  /**
+   * Apply a world delta velocity to the player
+   */
+  applyWorldDeltaVelocity(dv: THREE.Vector3) {
+    dv.applyEuler(new THREE.Euler(0, -this.camera.rotation.y, 0));
+    this.velocity.add(dv);
   }
 
   get position() {
@@ -74,6 +115,11 @@ export class Player {
       case "KeyR":
         this.position.set(32, 64, 32);
         this.velocity.set(0, 0, 0);
+        break;
+      case "Space":
+        if (this.onGround) {
+          this.velocity.y = this.jumpSpeed;
+        }
         break;
     }
   }

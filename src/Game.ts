@@ -3,6 +3,7 @@ import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import Stats from "three/examples/jsm/libs/stats.module";
 
 import { createUI } from "./GUI";
+import { Physics } from "./Physics";
 import { Player } from "./Player";
 import { World } from "./World";
 
@@ -18,6 +19,7 @@ export default class Game {
 
   private world!: World;
   private player!: Player;
+  private physics!: Physics;
 
   private previousTime = 0;
 
@@ -85,8 +87,9 @@ export default class Game {
     this.scene.add(this.world);
 
     this.player = new Player(this.scene);
+    this.physics = new Physics(this.scene);
 
-    createUI(this.world, this.player);
+    createUI(this.world, this.player, this.physics);
 
     this.draw();
   }
@@ -111,10 +114,10 @@ export default class Game {
       this.draw();
     });
 
-    this.player.applyInputs(deltaTime);
+    this.physics.update(deltaTime, this.player, this.world);
 
     if (this.controls) {
-      this.controls.autoRotate = true;
+      this.controls.autoRotate = false;
       this.controls.autoRotateSpeed = 2.0;
     }
 

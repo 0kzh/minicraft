@@ -1,15 +1,24 @@
 import GUI from "lil-gui";
 
 import { oreConfig } from "./Block";
+import { Physics } from "./Physics";
 import { Player } from "./Player";
 import { World } from "./World";
 
-export function createUI(world: World, player: Player) {
+export function createUI(world: World, player: Player, physics: Physics) {
   const gui = new GUI();
 
   const playerFolder = gui.addFolder("Player");
   playerFolder.add(player, "maxSpeed", 1, 50, 1).name("Max Speed");
+  playerFolder.add(player, "jumpSpeed", 1, 10, 1).name("Jump Speed");
   playerFolder.add(player.cameraHelper, "visible").name("Camera Helper");
+  playerFolder.add(player.boundsHelper, "visible").name("Show Player Bounds");
+
+  const physicsFolder = gui.addFolder("Physics");
+  physicsFolder.add(physics.helpers, "visible").name("Visualize Collisions");
+  physicsFolder
+    .add(physics, "simulationRate", 10, 1000)
+    .name("Simulation Rate");
 
   const terrainFolder = gui.addFolder("Terrain");
   terrainFolder.add(world.size, "width", 8, 128, 1).name("Width");
