@@ -1,11 +1,15 @@
-import { defineConfig } from 'vite'
-import react from '@vitejs/plugin-react'
-import { resolve } from 'path'
+import { resolve } from "path";
+
+import { defineConfig } from "vite";
+import { comlink } from "vite-plugin-comlink";
 
 // https://vitejs.dev/config/
 export default defineConfig({
   alias: {
-    '~': resolve(__dirname, 'src'),
+    "~": resolve(__dirname, "src"),
   },
-  plugins: [react()]
-})
+  plugins: [comlink()],
+  worker: {
+    plugins: [comlink()],
+  },
+});

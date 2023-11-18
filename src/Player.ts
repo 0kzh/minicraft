@@ -4,7 +4,8 @@ import { PointerLockControls } from "three/examples/jsm/controls/PointerLockCont
 export class Player {
   height = 1.75;
   radius = 0.5;
-  maxSpeed = 4.2;
+  // maxSpeed = 4.2;
+  maxSpeed = 25;
   jumpSpeed = 10;
   onGround = false;
 
@@ -28,7 +29,8 @@ export class Player {
   controls = new PointerLockControls(this.camera, document.body);
 
   constructor(scene: THREE.Scene) {
-    this.camera.position.set(32, 64, 32);
+    this.camera.position.set(32, 72, 32);
+    this.controls.lock();
     this.boundsHelper.visible = false;
     scene.add(this.camera);
     scene.add(this.cameraHelper);
@@ -123,7 +125,7 @@ export class Player {
         this.input.x = this.maxSpeed;
         break;
       case "KeyR":
-        this.position.set(32, 64, 32);
+        this.position.set(32, 72, 32);
         this.velocity.set(0, 0, 0);
         break;
       case "Space":

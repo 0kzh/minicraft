@@ -1,14 +1,15 @@
 import * as THREE from "three";
 
-import { Block, BlockID } from "./Block";
+import { BlockID } from "./Block";
+import { Block } from "./Block/Block";
 import { Player } from "./Player";
 import { World } from "./World";
 
 type Candidate = {
+  block: BlockID;
   x: number;
   y: number;
   z: number;
-  block: Block;
 };
 
 type Collision = {
@@ -91,7 +92,7 @@ export class Physics {
         for (let z = minZ; z <= maxZ; z++) {
           const block = world.getBlock(x, y, z);
           // If the block is solid, add it to the list of candidates
-          if (block && block.block.id !== BlockID.Air) {
+          if (block && block.block !== BlockID.Air) {
             candidates.push({
               block: block.block,
               x: x + 0.5,

@@ -29,6 +29,9 @@ export default class Game {
     this.initScene();
     this.initStats();
     this.initListeners();
+    // workerInstance.add(1, 2).then((result) => {
+    //   console.log(result);
+    // });
   }
 
   initStats() {
@@ -78,12 +81,13 @@ export default class Game {
     this.scene.add(sun);
     this.scene.add(sun.target);
 
+    this.scene.fog = new THREE.Fog(0x80a0e0, 50, 100);
+
     const ambient = new THREE.AmbientLight();
     ambient.intensity = 0.2;
     this.scene.add(ambient);
 
     this.world = new World();
-    this.world.generate();
     this.scene.add(this.world);
 
     this.player = new Player(this.scene);
@@ -115,6 +119,7 @@ export default class Game {
     });
 
     this.physics.update(deltaTime, this.player, this.world);
+    this.world.update(this.player);
 
     if (this.controls) {
       this.controls.autoRotate = false;
@@ -133,3 +138,7 @@ export default class Game {
     this.previousTime = currentTime;
   }
 }
+
+// export const workerInstance = new ComlinkWorker<typeof import("./chunkWorker")>(
+//   new URL("./chunkWorker", import.meta.url)
+// );
