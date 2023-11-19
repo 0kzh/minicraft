@@ -60,7 +60,7 @@ export class Physics {
       this.accumulator -= this.stepSize;
     }
 
-    player.updateBoundsHelper();
+    player.update(world);
   }
 
   detectCollisions(player: Player, world: World) {

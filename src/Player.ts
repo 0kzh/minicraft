@@ -1,11 +1,54 @@
 import * as THREE from "three";
 import { PointerLockControls } from "three/examples/jsm/controls/PointerLockControls.js";
+import { Line2 } from "three/examples/jsm/lines/Line2.js";
+import { LineGeometry } from "three/examples/jsm/lines/LineGeometry.js";
+import { LineMaterial } from "three/examples/jsm/lines/LineMaterial.js";
+
+import { World } from "./World";
+
+function cube(size: number) {
+  const h = size * 0.5;
+
+  const position = [
+    [-h, -h, -h],
+    [-h, h, -h],
+    [h, h, -h],
+    [h, -h, -h],
+    [-h, -h, -h],
+
+    [-h, -h, h],
+    [-h, h, h],
+    [-h, h, -h],
+    [-h, h, h],
+
+    [h, h, h],
+    [h, h, -h],
+    [h, h, h],
+
+    [h, -h, h],
+    [h, -h, -h],
+    [h, -h, h],
+    [-h, -h, h],
+  ].flat();
+
+  return position;
+}
+
+const selectionMaterial = new LineMaterial({
+  color: 0x000000,
+  opacity: 0.8,
+  linewidth: 2,
+  resolution: new THREE.Vector2(window.innerWidth, window.innerHeight),
+});
+const selectionLineGeometry = new LineGeometry();
+selectionLineGeometry.setPositions(cube(1.001));
+const CENTER_SCREEN = new THREE.Vector2(0, 0);
 
 export class Player {
   height = 1.75;
   radius = 0.5;
-  // maxSpeed = 4.2;
-  maxSpeed = 25;
+  maxSpeed = 4.2;
+  // maxSpeed = 25;
   jumpSpeed = 10;
   onGround = false;
 
@@ -26,15 +69,26 @@ export class Player {
     new THREE.CylinderGeometry(this.radius, this.radius, this.height, 16),
     new THREE.MeshBasicMaterial({ wireframe: true })
   );
+  selectionHelper = new Line2(selectionLineGeometry, selectionMaterial);
   controls = new PointerLockControls(this.camera, document.body);
+  raycaster = new THREE.Raycaster(
+    new THREE.Vector3(),
+    new THREE.Vector3(),
+    0,
+    3
+  );
+  selectedCoords: THREE.Vector3 | null = null;
 
   constructor(scene: THREE.Scene) {
     this.camera.position.set(32, 72, 32);
     this.controls.lock();
     this.boundsHelper.visible = false;
+    this.cameraHelper.visible = false;
+    this.selectionHelper.visible = false;
     scene.add(this.camera);
     scene.add(this.cameraHelper);
     scene.add(this.boundsHelper);
+    scene.add(this.selectionHelper);
 
     document.addEventListener("keydown", this.onKeyDown.bind(this));
     document.addEventListener("keyup", this.onKeyUp.bind(this));
@@ -74,12 +128,55 @@ export class Player {
     }
   }
 
+  update(world: World) {
+    this.updateBoundsHelper();
+    this.updateRaycaster(world);
+  }
+
   /**
    * Update the player's bounding cylinder helper
    */
   updateBoundsHelper() {
     this.boundsHelper.position.copy(this.camera.position);
     this.boundsHelper.position.y -= this.height / 2; // set to eye level
+  }
+
+  /**
+   * Updates the raycaster used for block selection
+   */
+  updateRaycaster(world: World) {
+    this.raycaster.setFromCamera(CENTER_SCREEN, this.camera);
+    const intersections = this.raycaster.intersectObjects(world.children, true);
+
+    if (intersections.length > 0) {
+      const intersection = intersections[0];
+
+      // Get the chunk associated with the seclected block
+      const chunk = intersection.object.parent;
+
+      if (!intersection.instanceId || !chunk) {
+        this.selectionHelper.visible = false;
+        return;
+      }
+
+      // Get the transformation matrix for the selected block
+      const blockMatrix = new THREE.Matrix4();
+      (intersection.object as THREE.InstancedMesh).getMatrixAt(
+        intersection.instanceId,
+        blockMatrix
+      );
+
+      // Set the selected coordinates to origin of chunk
+      // Then apply transformation matrix of block to get block coords
+      this.selectedCoords = chunk.position.clone();
+      this.selectedCoords.applyMatrix4(blockMatrix);
+
+      this.selectionHelper.position.copy(this.selectedCoords);
+      this.selectionHelper.visible = true;
+    } else {
+      this.selectedCoords = null;
+      this.selectionHelper.visible = false;
+    }
   }
 
   /*

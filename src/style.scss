@@ -33,3 +33,11 @@ body {
 	width: "100%";
 	text-align: left;
 }
+
+#cursor {
+	position: absolute;
+	top: 50%;
+	left: 50%;
+	mix-blend-mode: difference;
+	transform: translate(-50%, -50%);
+}
