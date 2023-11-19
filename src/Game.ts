@@ -98,8 +98,22 @@ export default class Game {
     this.draw();
   }
 
+  onMouseDown(event: MouseEvent) {
+    if (this.player.controls.isLocked && this.player.selectedCoords) {
+      if (event.button === 0) {
+        // Left click
+        this.world.removeBlock(
+          this.player.selectedCoords.x - 0.5,
+          this.player.selectedCoords.y - 0.5,
+          this.player.selectedCoords.z - 0.5
+        );
+      }
+    }
+  }
+
   initListeners() {
     window.addEventListener("resize", this.onWindowResize.bind(this), false);
+    document.addEventListener("mousedown", this.onMouseDown.bind(this), false);
   }
 
   onWindowResize() {
@@ -138,7 +152,3 @@ export default class Game {
     this.previousTime = currentTime;
   }
 }
-
-// export const workerInstance = new ComlinkWorker<typeof import("./chunkWorker")>(
-//   new URL("./chunkWorker", import.meta.url)
-// );

@@ -9,6 +9,7 @@ import { BlockFactory } from "./Block/BlockFactory";
 // );
 
 import chunkWorker from "./chunkWorker?worker&url";
+import { DataStore } from "./DataStore";
 
 const geometry = new THREE.BoxGeometry();
 
@@ -44,11 +45,13 @@ export class WorldChunk extends THREE.Group {
   params: WorldParams;
   size: WorldSize;
   loaded: boolean;
+  dataStore: DataStore;
 
-  constructor(size: WorldSize, params: WorldParams) {
+  constructor(size: WorldSize, params: WorldParams, dataStore: DataStore) {
     super();
     this.size = size;
     this.params = params;
+    this.dataStore = dataStore;
     this.loaded = false;
   }
 
@@ -65,6 +68,7 @@ export class WorldChunk extends THREE.Group {
       .then((data: BlockID[][][]) => {
         requestIdleCallback(() => {
           this.initializeTerrain(data);
+          this.loadPlayerChanges();
           this.generateMeshes(data);
           this.loaded = true;
 
@@ -91,6 +95,32 @@ export class WorldChunk extends THREE.Group {
         slice.push(row);
       }
       this.data.push(slice);
+    }
+  }
+
+  /**
+   * Loads player changes from the data store
+   */
+  loadPlayerChanges() {
+    for (let x = 0; x < this.size.width; x++) {
+      for (let y = 0; y < this.size.height; y++) {
+        for (let z = 0; z < this.size.width; z++) {
+          // Overwrite with value in data store if it exists
+          if (
+            this.dataStore.contains(this.position.x, this.position.z, x, y, z)
+          ) {
+            const blockId = this.dataStore.get(
+              this.position.x,
+              this.position.z,
+              x,
+              y,
+              z
+            );
+            console.log(`Overwriting block at ${x}, ${y}, ${z} to ${blockId}`);
+            this.setBlockId(x, y, z, blockId);
+          }
+        }
+      }
     }
   }
 
@@ -151,6 +181,12 @@ export class WorldChunk extends THREE.Group {
     }
   }
 
+  setBlockId(x: number, y: number, z: number, blockId: BlockID) {
+    if (this.inBounds(x, y, z)) {
+      this.data[x][y][z].block = blockId;
+    }
+  }
+
   /**
    * Gets the block data at (x, y, z) for this chunk
    */
@@ -163,9 +199,124 @@ export class WorldChunk extends THREE.Group {
   }
 
   /**
+   * Adds a new block at (x, y, z) for this chunk
+   */
+  addBlock(x: number, y: number, z: number, blockId: BlockID) {
+    // Safety check that we aren't adding a block for one that already exists
+    if (this.getBlock(x, y, z)?.block === BlockID.Air) {
+      this.setBlockId(x, y, z, blockId);
+      this.addBlockInstance(x, y, z);
+      this.dataStore.set(this.position.x, this.position.z, x, y, z, blockId);
+    }
+  }
+
+  /**
+   * Removes the block at (x, y, z)
+   */
+  removeBlock(x: number, y: number, z: number) {
+    const block = this.getBlock(x, y, z);
+    if (block) {
+      console.log("block", BlockFactory.getBlock(block.block).constructor.name);
+    } else {
+      console.log("no instance data");
+    }
+    if (block && block.block !== BlockID.Air) {
+      console.log(`Removing block at ${x}, ${y}, ${z}`);
+      this.deleteBlockInstance(x, y, z);
+      this.setBlockId(x, y, z, BlockID.Air);
+      this.dataStore.set(
+        this.position.x,
+        this.position.z,
+        x,
+        y,
+        z,
+        BlockID.Air
+      );
+    }
+  }
+
+  /**
+   * Creates a new instance for the block at (x, y, z)
+   */
+  addBlockInstance(x: number, y: number, z: number) {
+    const block = this.getBlock(x, y, z);
+
+    // If the block is not air and doesn't have an instance id, create a new instance
+    if (block && block.block !== BlockID.Air && !block.instanceId) {
+      const mesh = this.children.find(
+        (instanceMesh) =>
+          instanceMesh.name ===
+          BlockFactory.getBlock(block.block).constructor.name
+      ) as THREE.InstancedMesh;
+
+      if (mesh) {
+        const instanceId = mesh.count++;
+        this.setBlockInstanceId(x, y, z, instanceId);
+
+        // Update the appropriate instanced mesh and re-compute the bounding sphere so raycasting works
+        const matrix = new THREE.Matrix4();
+        matrix.setPosition(x + 0.5, y + 0.5, z + 0.5);
+        mesh.setMatrixAt(instanceId, matrix);
+        mesh.instanceMatrix.needsUpdate = true;
+        mesh.computeBoundingSphere();
+      }
+    }
+  }
+
+  /**
+   * Removes the mesh instance associated with `block` by swapping it with the last instance and decrementing instance count
+   */
+  deleteBlockInstance(x: number, y: number, z: number) {
+    const block = this.getBlock(x, y, z);
+
+    if (block?.block === BlockID.Air || !block?.instanceId) {
+      return;
+    }
+
+    // Get the mesh and instance id of the block
+    const mesh = this.children.find(
+      (instanceMesh) =>
+        instanceMesh.name ===
+        BlockFactory.getBlock(block.block).constructor.name
+    ) as THREE.InstancedMesh;
+    const instanceId = block.instanceId;
+
+    // We can't remove instance directly, so we need to swap with last instance and decrement count by 1
+    const lastMatrix = new THREE.Matrix4();
+    mesh.getMatrixAt(mesh.count - 1, lastMatrix);
+
+    // Also need to get block coords of instance to update instance id of the block
+    const lastBlockCoords = new THREE.Vector3();
+    lastBlockCoords.setFromMatrixPosition(lastMatrix);
+    this.setBlockInstanceId(
+      Math.floor(lastBlockCoords.x),
+      Math.floor(lastBlockCoords.y),
+      Math.floor(lastBlockCoords.z),
+      instanceId
+    );
+
+    // Swap transformation matrices
+    mesh.setMatrixAt(instanceId, lastMatrix);
+
+    // Decrement instance count
+    mesh.count--;
+
+    // Notify the instanced mesh we updated the instance matrix
+    mesh.instanceMatrix.needsUpdate = true;
+    mesh.computeBoundingSphere();
+
+    this.setBlockInstanceId(x, y, z, null);
+  }
+
+  /**
    * Sets the block instance data at (x, y, z) for this chunk
    */
-  setBlockInstanceId(x: number, y: number, z: number, instanceId: number) {
+  setBlockInstanceId(
+    x: number,
+    y: number,
+    z: number,
+    instanceId: number | null
+  ) {
     if (this.inBounds(x, y, z)) {
       this.data[x][y][z].instanceId = instanceId;
     }

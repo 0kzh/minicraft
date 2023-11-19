@@ -1,5 +1,7 @@
 import * as THREE from "three";
 
+import { BlockID } from "./Block";
+import { DataStore } from "./DataStore";
 import { Player } from "./Player";
 import { WorldChunk, WorldParams, WorldSize } from "./WorldChunk";
 
@@ -28,6 +30,9 @@ export class World extends THREE.Group {
       magnitude: 1,
     },
   };
+
+  // Used for persisting changes to the world
+  dataStore = new DataStore();
 
   constructor(seed = 0) {
     super();
@@ -130,13 +135,51 @@ export class World extends THREE.Group {
    * Generates the chunk at (x, z) coordinates
    */
   async generateChunk(x: number, z: number) {
-    const chunk = new WorldChunk(this.chunkSize, this.params);
+    const chunk = new WorldChunk(this.chunkSize, this.params, this.dataStore);
     chunk.position.set(x * this.chunkSize.width, 0, z * this.chunkSize.width);
     chunk.userData = { x, z };
 
     chunk.generate();
 
     this.add(chunk);
+  }
+
+  /**
+   * Adds a new block at (x, y, z)
+   */
+  addBlock(x: number, y: number, z: number, block: BlockID) {
+    const coords = this.worldToChunkCoords(x, y, z);
+    const chunk = this.getChunk(coords.chunk.x, coords.chunk.z);
+
+    if (chunk && chunk.loaded) {
+      chunk.addBlock(coords.block.x, y, coords.block.z, block);
+
+      // Hide any blocks that may be totally obscured
+      this.hideBlockIfNeeded(x - 1, y, z);
+      this.hideBlockIfNeeded(x + 1, y, z);
+      this.hideBlockIfNeeded(x, y - 1, z);
+      this.hideBlockIfNeeded(x, y + 1, z);
+      this.hideBlockIfNeeded(x, y, z - 1);
+      this.hideBlockIfNeeded(x, y, z + 1);
+    }
+  }
+
+  removeBlock(x: number, y: number, z: number) {
+    const coords = this.worldToChunkCoords(x, y, z);
+    const chunk = this.getChunk(coords.chunk.x, coords.chunk.z);
+
+    if (chunk && chunk.loaded) {
+      console.log(`Removing block at ${x}, ${y}, ${z} for chunk ${chunk.uuid}`);
+      chunk.removeBlock(coords.block.x, coords.block.y, coords.block.z);
+
+      // Reveal any adjacent blocks that may have been exposed after the block at (x,y,z) was removed
+      this.revealBlock(x - 1, y, z);
+      this.revealBlock(x + 1, y, z);
+      this.revealBlock(x, y - 1, z);
+      this.revealBlock(x, y + 1, z);
+      this.revealBlock(x, y, z - 1);
+      this.revealBlock(x, y, z + 1);
+    }
   }
 
   /**
@@ -183,5 +226,35 @@ export class World extends THREE.Group {
     return this.children.find((obj) => {
       return obj.userData.x === x && obj.userData.z === z;
     }) as WorldChunk | undefined;
+  }
+
+  /**
+   * Reveals block at (x, y, z) by adding new mesh instance
+   */
+  revealBlock(x: number, y: number, z: number) {
+    console.log(`Revealing block at ${x}, ${y}, ${z}`);
+    const coords = this.worldToChunkCoords(x, y, z);
+    const chunk = this.getChunk(coords.chunk.x, coords.chunk.z);
+
+    if (chunk && chunk.loaded) {
+      chunk.addBlockInstance(coords.block.x, coords.block.y, coords.block.z);
+    }
+  }
+
+  /**
+   * Hides block at (x, y, z) by removing mesh instance
+   */
+  hideBlockIfNeeded(x: number, y: number, z: number) {
+    console.log(`Hiding block at ${x}, ${y}, ${z}`);
+    const coords = this.worldToChunkCoords(x, y, z);
+    const chunk = this.getChunk(coords.chunk.x, coords.chunk.z);
+
+    if (
+      chunk &&
+      chunk.loaded &&
+      chunk.isBlockObscured(coords.block.x, coords.block.y, coords.block.z)
+    ) {
+      chunk.deleteBlockInstance(coords.block.x, coords.block.y, coords.block.z);
+    }
   }
 }
