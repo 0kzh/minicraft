@@ -137,11 +137,16 @@ export class WorldChunk extends THREE.Group {
 
     for (const blockId of blockIDValues) {
       const block = BlockFactory.getBlock(blockId);
+      console.log(
+        `Generating mesh for ${block.constructor.name}`,
+        block.material
+      );
       const mesh = new THREE.InstancedMesh(geometry, block.material, maxCount);
       mesh.name = block.constructor.name;
       mesh.count = 0;
       mesh.castShadow = true;
       mesh.receiveShadow = true;
+      mesh.matrixAutoUpdate = false;
       meshes[block.id] = mesh;
     }
 
@@ -215,11 +220,6 @@ export class WorldChunk extends THREE.Group {
    */
   removeBlock(x: number, y: number, z: number) {
     const block = this.getBlock(x, y, z);
-    if (block) {
-      console.log("block", BlockFactory.getBlock(block.block).constructor.name);
-    } else {
-      console.log("no instance data");
-    }
     if (block && block.block !== BlockID.Air) {
       console.log(`Removing block at ${x}, ${y}, ${z}`);
       this.deleteBlockInstance(x, y, z);

@@ -7,6 +7,8 @@ body {
 
 	margin: 0;
 	padding: 0;
+
+	overflow: hidden;
 }
 
 @font-face {
@@ -40,4 +42,27 @@ body {
 	left: 50%;
 	mix-blend-mode: difference;
 	transform: translate(-50%, -50%);
+}
+
+#toolbar {
+	position: absolute;
+	display: flex;
+	width: 45vw;
+	left: 50%;
+	bottom: 0px;
+	transform: translateX(-50%);
+
+	#toolbar-bg {
+		position: relative;
+		width: 100%;
+		image-rendering: pixelated;
+	}
+
+	#toolbar-active-border {
+		position: absolute;
+		left: 0%;
+		width: 13.5%;
+		transform: translateX(-4%) translateY(-4%);
+		image-rendering: pixelated;
+	}
 }

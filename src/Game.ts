@@ -107,6 +107,15 @@ export default class Game {
           this.player.selectedCoords.y - 0.5,
           this.player.selectedCoords.z - 0.5
         );
+      } else if (event.button === 2) {
+        if (this.player.activeBlockId != null) {
+          this.world.addBlock(
+            this.player.selectedCoords.x - 0.5,
+            this.player.selectedCoords.y - 0.5,
+            this.player.selectedCoords.z - 0.5,
+            this.player.activeBlockId
+          );
+        }
       }
     }
   }

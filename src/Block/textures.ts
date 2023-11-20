@@ -6,8 +6,9 @@ function loadTexture(path: string) {
   // TODO: make async
   const texture = textureLoader.load(path);
   texture.colorSpace = THREE.SRGBColorSpace;
-  texture.minFilter = THREE.NearestFilter;
+  texture.minFilter = THREE.NearestMipmapNearestFilter;
   texture.magFilter = THREE.NearestFilter;
+  texture.generateMipmaps = true;
   return texture;
 }
 

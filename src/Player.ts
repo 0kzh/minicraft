@@ -4,6 +4,7 @@ import { Line2 } from "three/examples/jsm/lines/Line2.js";
 import { LineGeometry } from "three/examples/jsm/lines/LineGeometry.js";
 import { LineMaterial } from "three/examples/jsm/lines/LineMaterial.js";
 
+import { BlockID } from "./Block";
 import { World } from "./World";
 
 function cube(size: number) {
@@ -78,6 +79,9 @@ export class Player {
     3
   );
   selectedCoords: THREE.Vector3 | null = null;
+
+  toolbar: (BlockID | null)[] = [];
+  activeToolbarIndex = 0;
 
   constructor(scene: THREE.Scene) {
     this.camera.position.set(32, 72, 32);
@@ -202,6 +206,10 @@ export class Player {
     return this.camera.position;
   }
 
+  get activeBlockId() {
+    return this.toolbar[this.activeToolbarIndex];
+  }
+
   onKeyDown(event: KeyboardEvent) {
     const validKeys = ["KeyW", "KeyA", "KeyS", "KeyD", "KeyR"];
     if (validKeys.includes(event.code) && !this.controls.isLocked) {
@@ -209,6 +217,20 @@ export class Player {
     }
 
     switch (event.code) {
+      case "Digit1":
+      case "Digit2":
+      case "Digit3":
+      case "Digit4":
+      case "Digit5":
+      case "Digit6":
+      case "Digit7":
+      case "Digit8":
+      case "Digit9":
+        this.activeToolbarIndex = Number(event.key) - 1;
+        document
+          ?.getElementById("toolbar-active-border")
+          ?.setAttribute("style", `left: ${this.activeToolbarIndex * 11}%`);
+        break;
       case "KeyW":
         this.input.z = this.maxSpeed;
         break;
