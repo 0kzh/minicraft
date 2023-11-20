@@ -76,7 +76,7 @@ export class Player {
     new THREE.Vector3(),
     new THREE.Vector3(),
     0,
-    3
+    5
   );
   selectedCoords: THREE.Vector3 | null = null;
 
