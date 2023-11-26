@@ -12,8 +12,6 @@ export default class Game {
   private scene!: THREE.Scene;
   private orbitCamera!: THREE.PerspectiveCamera;
 
-  private lightAmbient!: THREE.AmbientLight;
-
   private controls!: OrbitControls;
   private stats!: any;
 

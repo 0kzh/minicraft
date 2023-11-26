@@ -47,7 +47,7 @@ body {
 #toolbar {
 	position: absolute;
 	display: flex;
-	width: 45vw;
+	width: min(720px, 45vw);
 	left: 50%;
 	bottom: 0px;
 	transform: translateX(-50%);
@@ -62,7 +62,7 @@ body {
 		position: absolute;
 		left: 0%;
 		width: 13.5%;
-		transform: translateX(-4%) translateY(-4%);
+		transform: translateX(-4.5%) translateY(-4.5%);
 		image-rendering: pixelated;
 	}
 }
