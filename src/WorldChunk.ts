@@ -368,7 +368,13 @@ export class WorldChunk extends THREE.Group {
       left?.block === BlockID.Air ||
       right?.block === BlockID.Air ||
       front?.block === BlockID.Air ||
-      back?.block === BlockID.Air
+      back?.block === BlockID.Air ||
+      up?.block === BlockID.Leaves ||
+      down?.block === BlockID.Leaves ||
+      left?.block === BlockID.Leaves ||
+      right?.block === BlockID.Leaves ||
+      front?.block === BlockID.Leaves ||
+      back?.block === BlockID.Leaves
     ) {
       return false;
     }

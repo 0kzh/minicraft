@@ -37,8 +37,8 @@ export class World extends THREE.Group {
       },
       canopy: {
         size: {
-          min: 3,
-          max: 5,
+          min: 1,
+          max: 3,
         },
         density: 0.5,
       },

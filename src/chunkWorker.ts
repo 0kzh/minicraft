@@ -165,30 +165,88 @@ export const generateTrees = (
         }
 
         // Generate the canopy
-        const minR = params.trees.canopy.size.min;
-        const maxR = params.trees.canopy.size.max;
-        const R = Math.round(rng.random() * (maxR - minR)) + minR;
+        // generate layer by layer, 4 layers in total
+        for (let i = 0; i < 4; i++) {
+          if (i === 0) {
+            // first layer above the height of tree and has 5 leaves in a + shape
+            input[baseX][topY][baseZ] = BlockID.Leaves;
+            input[baseX + 1][topY][baseZ] = BlockID.Leaves;
+            input[baseX - 1][topY][baseZ] = BlockID.Leaves;
+            input[baseX][topY][baseZ + 1] = BlockID.Leaves;
+            input[baseX][topY][baseZ - 1] = BlockID.Leaves;
+          } else if (i === 1) {
+            // base layer
+            input[baseX][topY - i][baseZ] = BlockID.Leaves;
+            input[baseX + 1][topY - i][baseZ] = BlockID.Leaves;
+            input[baseX - 1][topY - i][baseZ] = BlockID.Leaves;
+            input[baseX][topY - i][baseZ + 1] = BlockID.Leaves;
+            input[baseX][topY - i][baseZ - 1] = BlockID.Leaves;
 
-        for (let x = -R; x <= R; x++) {
-          for (let y = -R; y <= R; y++) {
-            for (let z = -R; z <= R; z++) {
-              // don't create leaves outside canopy radius
-              if (x * x + y * y + z * z > R * R) {
-                continue;
+            // diagonal leaf blocks grow min of 1 and max of 3 blocks away from the trunk
+            const minR = params.trees.canopy.size.min;
+            const maxR = params.trees.canopy.size.max;
+            const R = Math.round(rng.random() * (maxR - minR)) + minR;
+
+            // grow leaves in a diagonal shape
+            for (let x = -R; x <= R; x++) {
+              for (let z = -R; z <= R; z++) {
+                if (x * x + z * z > R * R) {
+                  continue;
+                }
+
+                if (input[baseX + x][topY - i][baseZ + z] !== BlockID.Air) {
+                  continue;
+                }
+
+                if (rng.random() > params.trees.canopy.density) {
+                  input[baseX + x][topY - i][baseZ + z] = BlockID.Leaves;
+                }
               }
+            }
+          } else if (i === 2 || i == 3) {
+            for (let x = -2; x <= 2; x++) {
+              for (let z = -2; z <= 2; z++) {
+                if (input[baseX + x][topY - i][baseZ + z] !== BlockID.Air) {
+                  continue;
+                }
 
-              // don't overwrite existing blocks
-              if (input[baseX + x][topY + y][baseZ + z] !== BlockID.Air) {
-                continue;
+                input[baseX + x][topY - i][baseZ + z] = BlockID.Leaves;
               }
+            }
 
-              // Add some randomness to the canopy
-              if (rng.random() > params.trees.canopy.density) {
-                input[baseX + x][topY + y][baseZ + z] = BlockID.Leaves;
+            // remove 4 corners randomly
+            for (const x of [-2, 2]) {
+              for (const z of [-2, 2]) {
+                if (rng.random() > 0.5) {
+                  input[baseX + x][topY - i][baseZ + z] = BlockID.Air;
+                }
               }
             }
           }
         }
+
+        // const R = Math.round(rng.random() * (maxR - minR)) + minR;
+
+        // for (let x = -R; x <= R; x++) {
+        //   for (let y = -R; y <= R; y++) {
+        //     for (let z = -R; z <= R; z++) {
+        //       // don't create leaves outside canopy radius
+        //       if (x * x + y * y + z * z > R * R) {
+        //         continue;
+        //       }
+
+        //       // don't overwrite existing blocks
+        //       if (input[baseX + x][topY + y][baseZ + z] !== BlockID.Air) {
+        //         continue;
+        //       }
+
+        //       // Add some randomness to the canopy
+        //       if (rng.random() > params.trees.canopy.density) {
+        //         input[baseX + x][topY + y][baseZ + z] = BlockID.Leaves;
+        //       }
+        //     }
+        //   }
+        // }
       }
     }
   }
