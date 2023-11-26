@@ -11,7 +11,7 @@ export class World extends THREE.Group {
   asyncLoading = true;
   chunkSize: WorldSize = {
     width: 16,
-    height: 32,
+    height: 64,
   };
 
   params: WorldParams = {
@@ -19,7 +19,7 @@ export class World extends THREE.Group {
     terrain: {
       scale: 50,
       magnitude: 0.1,
-      offset: 0.8,
+      offset: 0.5,
     },
     surface: {
       offset: 4,
@@ -28,6 +28,20 @@ export class World extends THREE.Group {
     bedrock: {
       offset: 1,
       magnitude: 1,
+    },
+    trees: {
+      frequency: 0.04,
+      trunkHeight: {
+        min: 6,
+        max: 8,
+      },
+      canopy: {
+        size: {
+          min: 3,
+          max: 5,
+        },
+        density: 0.5,
+      },
     },
   };
 

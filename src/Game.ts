@@ -91,7 +91,7 @@ export default class Game {
     this.player = new Player(this.scene);
     this.physics = new Physics(this.scene);
 
-    createUI(this.world, this.player, this.physics);
+    createUI(this.world, this.player, this.physics, this.scene);
 
     this.draw();
   }

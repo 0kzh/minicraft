@@ -20,13 +20,18 @@ export const textures = {
   coal: loadTexture("textures/coal_ore.png"),
   iron: loadTexture("textures/iron_ore.png"),
   bedrock: loadTexture("textures/bedrock.png"),
+  oakLogSide: loadTexture("textures/oak_log_side.png"),
+  oakLogTop: loadTexture("textures/oak_log_top.png"),
+  leaves: loadTexture("textures/leaves.png"),
 };
 
 export const uiTextures = {
-  grass: "textures/grass-block.png",
-  dirt: "textures/dirt-block.png",
-  stone: "textures/stone-block.png",
-  coal: "textures/coal-block.png",
-  iron: "textures/iron-block.png",
-  bedrock: "textures/bedrock-block.png",
+  grass: "textures/grass_block.png",
+  dirt: "textures/dirt_block.png",
+  stone: "textures/stone_block.png",
+  coal: "textures/coal_block.png",
+  iron: "textures/iron_block.png",
+  bedrock: "textures/bedrock_block.png",
+  oakLog: "textures/oak_log_block.png",
+  leaves: "textures/leaves_block.png",
 };

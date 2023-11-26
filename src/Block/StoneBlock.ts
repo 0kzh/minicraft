@@ -5,15 +5,10 @@ import { textures, uiTextures } from "./textures";
 
 import { BlockID } from ".";
 
+const stoneMaterial = new THREE.MeshLambertMaterial({ map: textures.stone });
+
 export class StoneBlock extends Block {
   id = BlockID.Stone;
-  material = [
-    new THREE.MeshLambertMaterial({ map: textures.stone }), // right
-    new THREE.MeshLambertMaterial({ map: textures.stone }), // left
-    new THREE.MeshLambertMaterial({ map: textures.stone }), // top
-    new THREE.MeshLambertMaterial({ map: textures.stone }), // bottom
-    new THREE.MeshLambertMaterial({ map: textures.stone }), // front
-    new THREE.MeshLambertMaterial({ map: textures.stone }), // back
-  ];
+  material = stoneMaterial;
   uiTexture = uiTextures.stone;
 }

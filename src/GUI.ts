@@ -5,7 +5,12 @@ import { Physics } from "./Physics";
 import { Player } from "./Player";
 import { World } from "./World";
 
-export function createUI(world: World, player: Player, physics: Physics) {
+export function createUI(
+  world: World,
+  player: Player,
+  physics: Physics,
+  scene: THREE.Scene
+) {
   const gui = new GUI();
 
   const playerFolder = gui.addFolder("Player");
@@ -19,6 +24,31 @@ export function createUI(world: World, player: Player, physics: Physics) {
   physicsFolder
     .add(physics, "simulationRate", 10, 1000)
     .name("Simulation Rate");
+
+  const worldFolder = gui.addFolder("World");
+  worldFolder.add(world, "renderDistance", 1, 16, 1).name("Render Distance");
+  if (scene.fog) {
+    worldFolder.add(scene.fog, "near", 1, 200, 1).name("Fog Near");
+    worldFolder.add(scene.fog, "far", 1, 200, 1).name("Fog Far");
+  }
+
+  const treesFolder = worldFolder.addFolder("Trees");
+  treesFolder.add(world.params.trees, "frequency", 0, 0.1).name("Frequency");
+  treesFolder
+    .add(world.params.trees.trunkHeight, "min", 0, 10, 1)
+    .name("Min Trunk Height");
+  treesFolder
+    .add(world.params.trees.trunkHeight, "max", 0, 10, 1)
+    .name("Max Trunk Height");
+  treesFolder
+    .add(world.params.trees.canopy.size, "min", 0, 10, 1)
+    .name("Min Canopy Size");
+  treesFolder
+    .add(world.params.trees.canopy.size, "max", 0, 10, 1)
+    .name("Max Canopy Size");
+  treesFolder
+    .add(world.params.trees.canopy, "density", 0, 1)
+    .name("Canopy Density");
 
   const terrainFolder = gui.addFolder("Terrain");
   terrainFolder.add(world.chunkSize, "width", 8, 128, 1).name("Width");

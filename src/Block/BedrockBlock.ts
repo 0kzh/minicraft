@@ -5,15 +5,11 @@ import { textures, uiTextures } from "./textures";
 
 import { BlockID } from ".";
 
+const bedrockMaterial = new THREE.MeshLambertMaterial({
+  map: textures.bedrock,
+});
 export class BedrockBlock extends Block {
   id = BlockID.Bedrock;
-  material = [
-    new THREE.MeshLambertMaterial({ map: textures.bedrock }), // right
-    new THREE.MeshLambertMaterial({ map: textures.bedrock }), // left
-    new THREE.MeshLambertMaterial({ map: textures.bedrock }), // top
-    new THREE.MeshLambertMaterial({ map: textures.bedrock }), // bottom
-    new THREE.MeshLambertMaterial({ map: textures.bedrock }), // front
-    new THREE.MeshLambertMaterial({ map: textures.bedrock }), // back
-  ];
+  material = bedrockMaterial;
   uiTexture = uiTextures.bedrock;
 }

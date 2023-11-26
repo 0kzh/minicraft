@@ -88,6 +88,8 @@ export class Player {
     BlockID.Stone,
     BlockID.CoalOre,
     BlockID.IronOre,
+    BlockID.OakLog,
+    BlockID.Leaves,
   ];
   activeToolbarIndex = 0;
 

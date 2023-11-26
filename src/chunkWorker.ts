@@ -16,14 +16,10 @@ export const generateChunk = async (
 ) => {
   const chunkPos = new THREE.Vector3(x, 0, z);
   let data = initEmptyChunk(chunkSize);
-  data = generateResources(new RNG(params.seed), data, chunkSize, chunkPos);
-  data = generateTerrain(
-    new RNG(params.seed),
-    data,
-    chunkSize,
-    params,
-    chunkPos
-  );
+  const rng = new RNG(params.seed);
+  data = generateResources(rng, data, chunkSize, chunkPos);
+  data = generateTerrain(rng, data, chunkSize, params, chunkPos);
+  data = generateTrees(rng, data, chunkSize, params, chunkPos);
 
   return data;
 };
@@ -121,6 +117,77 @@ export const generateTerrain = (
           input[x][y][z] = BlockID.Grass;
         } else if (y > height) {
           input[x][y][z] = BlockID.Air;
+        }
+      }
+    }
+  }
+
+  return input;
+};
+
+/**
+ * Generates trees
+ */
+export const generateTrees = (
+  rng: RNG,
+  input: BlockID[][][],
+  size: WorldSize,
+  params: WorldParams,
+  chunkPos: THREE.Vector3
+): BlockID[][][] => {
+  const simplex = new SimplexNoise(rng);
+  const canopySize = params.trees.canopy.size.max;
+  for (let baseX = canopySize; baseX < size.width - canopySize; baseX++) {
+    for (let baseZ = canopySize; baseZ < size.width - canopySize; baseZ++) {
+      const n =
+        simplex.noise(chunkPos.x + baseX, chunkPos.z + baseZ) * 0.5 + 0.5;
+      if (n < 1 - params.trees.frequency) {
+        continue;
+      }
+
+      // Find the grass tile
+      for (let y = size.height - 1; y >= 0; y--) {
+        if (input[baseX][y][baseZ] !== BlockID.Grass) {
+          continue;
+        }
+
+        // Found grass, move one time up
+        const baseY = y + 1;
+
+        const minH = params.trees.trunkHeight.min;
+        const maxH = params.trees.trunkHeight.max;
+        const trunkHeight = Math.round(rng.random() * (maxH - minH)) + minH;
+        const topY = baseY + trunkHeight;
+
+        // Fill in blocks for the trunk
+        for (let i = baseY; i < topY; i++) {
+          input[baseX][i][baseZ] = BlockID.OakLog;
+        }
+
+        // Generate the canopy
+        const minR = params.trees.canopy.size.min;
+        const maxR = params.trees.canopy.size.max;
+        const R = Math.round(rng.random() * (maxR - minR)) + minR;
+
+        for (let x = -R; x <= R; x++) {
+          for (let y = -R; y <= R; y++) {
+            for (let z = -R; z <= R; z++) {
+              // don't create leaves outside canopy radius
+              if (x * x + y * y + z * z > R * R) {
+                continue;
+              }
+
+              // don't overwrite existing blocks
+              if (input[baseX + x][topY + y][baseZ + z] !== BlockID.Air) {
+                continue;
+              }
+
+              // Add some randomness to the canopy
+              if (rng.random() > params.trees.canopy.density) {
+                input[baseX + x][topY + y][baseZ + z] = BlockID.Leaves;
+              }
+            }
+          }
         }
       }
     }

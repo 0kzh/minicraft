@@ -6,6 +6,8 @@ export enum BlockID {
   CoalOre = 4,
   IronOre = 5,
   Bedrock = 6,
+  OakLog = 7,
+  Leaves = 8,
 }
 
 export const oreConfig = {
@@ -29,4 +31,6 @@ export const blockIdToKey = {
   [BlockID.CoalOre]: "coal",
   [BlockID.IronOre]: "iron",
   [BlockID.Bedrock]: "bedrock",
+  [BlockID.OakLog]: "oak_log",
+  [BlockID.Leaves]: "leaves",
 };

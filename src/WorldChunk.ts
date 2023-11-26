@@ -33,6 +33,20 @@ export type WorldParams = {
     offset: number;
     magnitude: number;
   };
+  trees: {
+    frequency: number;
+    trunkHeight: {
+      min: number;
+      max: number;
+    };
+    canopy: {
+      size: {
+        min: number;
+        max: number;
+      };
+      density: number;
+    };
+  };
 };
 
 export type WorldSize = {

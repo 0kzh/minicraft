@@ -5,6 +5,8 @@ import { CoalOreBlock } from "./CoalOreBlock";
 import { DirtBlock } from "./DirtBlock";
 import { GrassBlock } from "./GrassBlock";
 import { IronOreBlock } from "./IronOreBlock";
+import { LeavesBlock } from "./LeavesBlock";
+import { OakLogBlock } from "./OakLogBlock";
 import { StoneBlock } from "./StoneBlock";
 
 import { BlockID } from ".";
@@ -19,6 +21,8 @@ export class BlockFactory {
     [BlockID.Bedrock]: BedrockBlock,
     [BlockID.CoalOre]: CoalOreBlock,
     [BlockID.IronOre]: IronOreBlock,
+    [BlockID.OakLog]: OakLogBlock,
+    [BlockID.Leaves]: LeavesBlock,
   };
 
   private static blockInstances: { [id: number]: Block } = {};
