@@ -32,15 +32,14 @@ export class World extends THREE.Group {
     trees: {
       frequency: 0.04,
       trunkHeight: {
-        min: 6,
-        max: 8,
+        min: 5,
+        max: 7,
       },
       canopy: {
         size: {
           min: 1,
           max: 3,
         },
-        density: 0.5,
       },
     },
   };

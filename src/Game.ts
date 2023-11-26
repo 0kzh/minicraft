@@ -1,3 +1,4 @@
+import TWEEN from "@tweenjs/tween.js";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import Stats from "three/examples/jsm/libs/stats.module";
@@ -5,6 +6,7 @@ import Stats from "three/examples/jsm/libs/stats.module";
 import { createUI } from "./GUI";
 import { Physics } from "./Physics";
 import { Player } from "./Player";
+import { numberWithCommas } from "./util";
 import { World } from "./World";
 
 export default class Game {
@@ -143,6 +145,21 @@ export default class Game {
     this.physics.update(deltaTime, this.player, this.world);
     this.world.update(this.player);
 
+    // update triangle count
+    const triangleCount = document.getElementById("triangle-count");
+    if (triangleCount) {
+      triangleCount.innerHTML = `triangles: ${numberWithCommas(
+        this.renderer.info.render.triangles
+      )}`;
+    }
+
+    const renderCalls = document.getElementById("render-calls");
+    if (renderCalls) {
+      renderCalls.innerHTML = `draw calls: ${numberWithCommas(
+        this.renderer.info.render.calls
+      )}`;
+    }
+
     if (this.controls) {
       this.controls.autoRotate = false;
       this.controls.autoRotateSpeed = 2.0;
@@ -151,6 +168,8 @@ export default class Game {
     if (this.stats) this.stats.update();
 
     if (this.controls) this.controls.update();
+
+    TWEEN.update();
 
     this.renderer.render(
       this.scene,

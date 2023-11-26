@@ -1,3 +1,4 @@
+import TWEEN from "@tweenjs/tween.js";
 import * as THREE from "three";
 import { PointerLockControls } from "three/examples/jsm/controls/PointerLockControls.js";
 import { Line2 } from "three/examples/jsm/lines/Line2.js";
@@ -49,7 +50,8 @@ const CENTER_SCREEN = new THREE.Vector2(0, 0);
 export class Player {
   height = 1.75;
   radius = 0.5;
-  maxSpeed = 4.2;
+  maxSpeed = 4.317;
+  maxSprintSpeed = 5.612;
   // maxSpeed = 25;
   jumpSpeed = 10;
   onGround = false;
@@ -59,6 +61,9 @@ export class Player {
   #worldVelocity = new THREE.Vector3();
 
   spacePressed = false;
+  wKeyPressed = false;
+  lastWPressed = 0;
+  isSprinting = false;
 
   camera = new THREE.PerspectiveCamera(
     70,
@@ -112,7 +117,11 @@ export class Player {
     if (this.controls.isLocked) {
       // Normalize the input vector if more than one key is pressed
       if (this.input.length() > 1) {
-        this.input.normalize().multiplyScalar(this.maxSpeed);
+        this.input
+          .normalize()
+          .multiplyScalar(
+            this.isSprinting ? this.maxSprintSpeed : this.maxSpeed
+          );
       }
 
       this.velocity.x = this.input.x;
@@ -146,6 +155,7 @@ export class Player {
     this.updateBoundsHelper();
     this.updateRaycaster(world);
     this.updateToolbar();
+    this.updateCameraFOV();
   }
 
   /**
@@ -218,6 +228,20 @@ export class Player {
     }
   }
 
+  updateCameraFOV() {
+    const currentFov = { fov: this.camera.fov };
+    const targetFov = this.isSprinting ? 80 : 70;
+    const update = () => {
+      this.camera.fov = currentFov.fov;
+      this.camera.updateProjectionMatrix();
+    };
+    new TWEEN.Tween(currentFov)
+      .to({ fov: targetFov }, 30)
+      .easing(TWEEN.Easing.Quadratic.Out)
+      .onUpdate(update)
+      .start();
+  }
+
   /*
    * Returns the velocity of the player in world coordinates
    */
@@ -267,7 +291,15 @@ export class Player {
           ?.setAttribute("style", `left: ${this.activeToolbarIndex * 11}%`);
         break;
       case "KeyW":
-        this.input.z = this.maxSpeed;
+        if (!this.wKeyPressed && performance.now() - this.lastWPressed < 150) {
+          console.log("sprint!");
+          this.isSprinting = true;
+          this.input.z = this.maxSprintSpeed;
+        } else {
+          this.input.z = this.maxSpeed;
+        }
+        this.wKeyPressed = true;
+        this.lastWPressed = performance.now();
         break;
       case "KeyA":
         this.input.x = -this.maxSpeed;
@@ -292,6 +324,8 @@ export class Player {
     switch (event.code) {
       case "KeyW":
         this.input.z = 0;
+        this.wKeyPressed = false;
+        this.isSprinting = false;
         break;
       case "KeyA":
         this.input.x = 0;

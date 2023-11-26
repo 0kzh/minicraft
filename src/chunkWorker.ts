@@ -198,7 +198,7 @@ export const generateTrees = (
                   continue;
                 }
 
-                if (rng.random() > params.trees.canopy.density) {
+                if (rng.random() > 0.5) {
                   input[baseX + x][topY - i][baseZ + z] = BlockID.Leaves;
                 }
               }
@@ -224,29 +224,6 @@ export const generateTrees = (
             }
           }
         }
-
-        // const R = Math.round(rng.random() * (maxR - minR)) + minR;
-
-        // for (let x = -R; x <= R; x++) {
-        //   for (let y = -R; y <= R; y++) {
-        //     for (let z = -R; z <= R; z++) {
-        //       // don't create leaves outside canopy radius
-        //       if (x * x + y * y + z * z > R * R) {
-        //         continue;
-        //       }
-
-        //       // don't overwrite existing blocks
-        //       if (input[baseX + x][topY + y][baseZ + z] !== BlockID.Air) {
-        //         continue;
-        //       }
-
-        //       // Add some randomness to the canopy
-        //       if (rng.random() > params.trees.canopy.density) {
-        //         input[baseX + x][topY + y][baseZ + z] = BlockID.Leaves;
-        //       }
-        //     }
-        //   }
-        // }
       }
     }
   }

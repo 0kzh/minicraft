@@ -44,7 +44,6 @@ export type WorldParams = {
         min: number;
         max: number;
       };
-      density: number;
     };
   };
 };

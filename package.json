@@ -8,6 +8,7 @@
     "lint": "eslint . --ext .ts,.tsx,.js"
   },
   "dependencies": {
+    "@tweenjs/tween.js": "^21.0.0",
     "clsx": "^1.2.1",
     "comlink": "^4.4.1",
     "fs-extra": "^11.1.0",

@@ -46,9 +46,6 @@ export function createUI(
   treesFolder
     .add(world.params.trees.canopy.size, "max", 0, 10, 1)
     .name("Max Canopy Size");
-  treesFolder
-    .add(world.params.trees.canopy, "density", 0, 1)
-    .name("Canopy Density");
 
   const terrainFolder = gui.addFolder("Terrain");
   terrainFolder.add(world.chunkSize, "width", 8, 128, 1).name("Width");
