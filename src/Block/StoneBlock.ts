@@ -1,7 +1,7 @@
 import * as THREE from "three";
 
 import { Block } from "./Block";
-import { textures } from "./textures";
+import { textures, uiTextures } from "./textures";
 
 import { BlockID } from ".";
 
@@ -15,4 +15,5 @@ export class StoneBlock extends Block {
     new THREE.MeshLambertMaterial({ map: textures.stone }), // front
     new THREE.MeshLambertMaterial({ map: textures.stone }), // back
   ];
+  uiTexture = uiTextures.stone;
 }

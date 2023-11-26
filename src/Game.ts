@@ -97,20 +97,21 @@ export default class Game {
   }
 
   onMouseDown(event: MouseEvent) {
-    if (this.player.controls.isLocked && this.player.selectedCoords) {
-      if (event.button === 0) {
+    if (this.player.controls.isLocked) {
+      if (event.button === 0 && this.player.selectedCoords) {
         // Left click
         this.world.removeBlock(
           this.player.selectedCoords.x - 0.5,
           this.player.selectedCoords.y - 0.5,
           this.player.selectedCoords.z - 0.5
         );
-      } else if (event.button === 2) {
+      } else if (event.button === 2 && this.player.blockPlacementCoords) {
+        console.log("adding block", this.player.activeBlockId);
         if (this.player.activeBlockId != null) {
           this.world.addBlock(
-            this.player.selectedCoords.x - 0.5,
-            this.player.selectedCoords.y - 0.5,
-            this.player.selectedCoords.z - 0.5,
+            this.player.blockPlacementCoords.x - 0.5,
+            this.player.blockPlacementCoords.y - 0.5,
+            this.player.blockPlacementCoords.z - 0.5,
             this.player.activeBlockId
           );
         }

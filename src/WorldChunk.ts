@@ -137,10 +137,6 @@ export class WorldChunk extends THREE.Group {
 
     for (const blockId of blockIDValues) {
       const block = BlockFactory.getBlock(blockId);
-      console.log(
-        `Generating mesh for ${block.constructor.name}`,
-        block.material
-      );
       const mesh = new THREE.InstancedMesh(geometry, block.material, maxCount);
       mesh.name = block.constructor.name;
       mesh.count = 0;
@@ -242,6 +238,7 @@ export class WorldChunk extends THREE.Group {
     const block = this.getBlock(x, y, z);
 
     // If the block is not air and doesn't have an instance id, create a new instance
+    console.log("adding block instance", block);
     if (block && block.block !== BlockID.Air && !block.instanceId) {
       const mesh = this.children.find(
         (instanceMesh) =>

@@ -1,7 +1,7 @@
 import * as THREE from "three";
 
 import { OreBlock } from "./OreBlock";
-import { textures } from "./textures";
+import { textures, uiTextures } from "./textures";
 
 import { BlockID, oreConfig } from ".";
 
@@ -17,4 +17,5 @@ export const IronOreBlock = class extends OreBlock {
     new THREE.MeshLambertMaterial({ map: textures.iron }), // front
     new THREE.MeshLambertMaterial({ map: textures.iron }), // back
   ];
+  uiTexture = uiTextures.iron;
 };

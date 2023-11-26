@@ -58,6 +58,9 @@ export class World extends THREE.Group {
     const chunksToAdd = this.getChunksToAdd(visibleChunks);
     this.removeUnusedChunks(visibleChunks);
 
+    if (chunksToAdd.length > 0) {
+      console.log("Chunks to add", chunksToAdd);
+    }
     for (const chunk of chunksToAdd) {
       this.generateChunk(chunk.x, chunk.z);
     }
@@ -152,7 +155,7 @@ export class World extends THREE.Group {
     const chunk = this.getChunk(coords.chunk.x, coords.chunk.z);
 
     if (chunk && chunk.loaded) {
-      chunk.addBlock(coords.block.x, y, coords.block.z, block);
+      chunk.addBlock(coords.block.x, coords.block.y, coords.block.z, block);
 
       // Hide any blocks that may be totally obscured
       this.hideBlockIfNeeded(x - 1, y, z);

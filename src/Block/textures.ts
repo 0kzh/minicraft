@@ -21,3 +21,12 @@ export const textures = {
   iron: loadTexture("textures/iron_ore.png"),
   bedrock: loadTexture("textures/bedrock.png"),
 };
+
+export const uiTextures = {
+  grass: "textures/grass-block.png",
+  dirt: "textures/dirt-block.png",
+  stone: "textures/stone-block.png",
+  coal: "textures/coal-block.png",
+  iron: "textures/iron-block.png",
+  bedrock: "textures/bedrock-block.png",
+};

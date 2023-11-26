@@ -65,4 +65,52 @@ body {
 		transform: translateX(-4.5%) translateY(-4.5%);
 		image-rendering: pixelated;
 	}
+
+	.toolbar-slot {
+		position: absolute;
+		left: 0%;
+		width: 13.5%;
+		aspect-ratio: 1;
+		transform: translateX(-4.5%) translateY(-4.5%) scale(0.65);
+		image-rendering: pixelated;
+		background-size: 100% 100%;
+		background-repeat: no-repeat;
+		background-position: center;
+	}
+
+	#toolbar-slot-1 {
+		left: 0%;
+	}
+
+	#toolbar-slot-2 {
+		left: 11%;
+	}
+
+	#toolbar-slot-3 {
+		left: 22%;
+	}
+
+	#toolbar-slot-4 {
+		left: 33%;
+	}
+
+	#toolbar-slot-5 {
+		left: 44%;
+	}
+
+	#toolbar-slot-6 {
+		left: 55%;
+	}
+
+	#toolbar-slot-7 {
+		left: 66%;
+	}
+
+	#toolbar-slot-8 {
+		left: 77%;
+	}
+
+	#toolbar-slot-9 {
+		left: 88%;
+	}
 }

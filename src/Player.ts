@@ -5,6 +5,7 @@ import { LineGeometry } from "three/examples/jsm/lines/LineGeometry.js";
 import { LineMaterial } from "three/examples/jsm/lines/LineMaterial.js";
 
 import { BlockID } from "./Block";
+import { BlockFactory } from "./Block/BlockFactory";
 import { World } from "./World";
 
 function cube(size: number) {
@@ -79,8 +80,15 @@ export class Player {
     5
   );
   selectedCoords: THREE.Vector3 | null = null;
+  blockPlacementCoords: THREE.Vector3 | null = null;
 
-  toolbar: (BlockID | null)[] = [];
+  toolbar: (BlockID | null)[] = [
+    BlockID.Grass,
+    BlockID.Dirt,
+    BlockID.Stone,
+    BlockID.CoalOre,
+    BlockID.IronOre,
+  ];
   activeToolbarIndex = 0;
 
   constructor(scene: THREE.Scene) {
@@ -135,6 +143,7 @@ export class Player {
   update(world: World) {
     this.updateBoundsHelper();
     this.updateRaycaster(world);
+    this.updateToolbar();
   }
 
   /**
@@ -175,11 +184,35 @@ export class Player {
       this.selectedCoords = chunk.position.clone();
       this.selectedCoords.applyMatrix4(blockMatrix);
 
+      if (this.activeBlockId !== BlockID.Air && intersection.normal) {
+        // Update block placement coords to be 1 block over in the direction of the normal
+        this.blockPlacementCoords = this.selectedCoords
+          .clone()
+          .add(intersection.normal);
+      }
+
       this.selectionHelper.position.copy(this.selectedCoords);
       this.selectionHelper.visible = true;
     } else {
       this.selectedCoords = null;
       this.selectionHelper.visible = false;
+    }
+  }
+
+  /**
+   * Updates the toolbar UI
+   */
+  updateToolbar() {
+    for (let i = 1; i <= 9; i++) {
+      const slot = document.getElementById(`toolbar-slot-${i}`);
+      if (slot) {
+        const blockId = this.toolbar[i - 1];
+        if (blockId != null && blockId !== BlockID.Air) {
+          slot.style.backgroundImage = `url('${
+            BlockFactory.getBlock(blockId).uiTexture
+          }')`;
+        }
+      }
     }
   }
 
