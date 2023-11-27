@@ -194,7 +194,7 @@ export default class Game {
 
   updateSkyColor() {
     const elapsedTime = this.clock.getElapsedTime();
-    const cycleDuration = 24; // Duration of a day in seconds
+    const cycleDuration = 300; // Duration of a day in seconds
     const cycleTime = elapsedTime % cycleDuration;
 
     let topColor: THREE.Color;
@@ -260,7 +260,8 @@ export default class Game {
     this.sky.material.uniforms.topColor.value = topColor;
     this.sky.material.uniforms.bottomColor.value = bottomColor;
 
-    this.scene.fog?.color.copy(bottomColor);
+    // Desaturate the fog slightly
+    this.scene.fog?.color.copy(bottomColor).multiplyScalar(0.2);
   }
 
   draw() {
