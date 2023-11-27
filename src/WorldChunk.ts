@@ -255,8 +255,7 @@ export class WorldChunk extends THREE.Group {
     const block = this.getBlock(x, y, z);
 
     // If the block is not air and doesn't have an instance id, create a new instance
-    console.log("adding block instance", block);
-    if (block && block.block !== BlockID.Air && !block.instanceId) {
+    if (block && block.block !== BlockID.Air && block.instanceId == null) {
       const mesh = this.children.find(
         (instanceMesh) =>
           instanceMesh.name ===
@@ -283,7 +282,7 @@ export class WorldChunk extends THREE.Group {
   deleteBlockInstance(x: number, y: number, z: number) {
     const block = this.getBlock(x, y, z);
 
-    if (block?.block === BlockID.Air || !block?.instanceId) {
+    if (block?.block === BlockID.Air || block?.instanceId == null) {
       return;
     }
 

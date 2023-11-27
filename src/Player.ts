@@ -175,11 +175,12 @@ export class Player {
 
     if (intersections.length > 0) {
       const intersection = intersections[0];
+      // console.log(intersection.object.name, intersection.point);
 
       // Get the chunk associated with the seclected block
       const chunk = intersection.object.parent;
 
-      if (!intersection.instanceId || !chunk) {
+      if (intersection.instanceId == null || !chunk) {
         this.selectionHelper.visible = false;
         return;
       }
