@@ -63,6 +63,10 @@ export class World extends THREE.Group {
     this.update(player);
   }
 
+  getChunkKey(x: number, z: number) {
+    return `${x},${z}`;
+  }
+
   /**
    * Updates the visible portions of the world based on the current player position
    */
@@ -261,7 +265,6 @@ export class World extends THREE.Group {
    * Hides block at (x, y, z) by removing mesh instance
    */
   hideBlockIfNeeded(x: number, y: number, z: number) {
-    console.log(`Hiding block at ${x}, ${y}, ${z}`);
     const coords = this.worldToChunkCoords(x, y, z);
     const chunk = this.getChunk(coords.chunk.x, coords.chunk.z);
 
@@ -270,6 +273,7 @@ export class World extends THREE.Group {
       chunk.loaded &&
       chunk.isBlockObscured(coords.block.x, coords.block.y, coords.block.z)
     ) {
+      console.log(`Hiding block at ${x}, ${y}, ${z}`);
       chunk.deleteBlockInstance(coords.block.x, coords.block.y, coords.block.z);
     }
   }

@@ -77,9 +77,7 @@ export default class Game {
 
     this.orbitCamera = new THREE.PerspectiveCamera(
       75,
-      window.innerWidth / window.innerHeight,
-      0.1,
-      1000
+      window.innerWidth / window.innerHeight
     );
     this.orbitCamera.position.set(-32, 64, -32);
 
@@ -261,7 +259,7 @@ export default class Game {
     this.sky.material.uniforms.bottomColor.value = bottomColor;
 
     // Desaturate the fog slightly
-    this.scene.fog?.color.copy(bottomColor).multiplyScalar(0.2);
+    this.scene.fog?.color.copy(topColor).multiplyScalar(0.2);
   }
 
   draw() {

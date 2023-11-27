@@ -177,7 +177,11 @@ export class WorldChunk extends THREE.Group {
 
           const instanceId = mesh.count;
 
-          if (block && !this.isBlockObscured(x, y, z)) {
+          if (
+            block &&
+            !this.isBlockObscured(x, y, z) &&
+            !this.isBorderBlock(x, y, z)
+          ) {
             matrix.setPosition(x + 0.5, y + 0.5, z + 0.5); // lower left corner
             mesh.setMatrixAt(instanceId, matrix);
             this.setBlockInstanceId(x, y, z, instanceId);
@@ -379,6 +383,23 @@ export class WorldChunk extends THREE.Group {
     }
 
     return true;
+  }
+
+  isBorderBlock(x: number, y: number, z: number): boolean {
+    const up = this.getBlock(x, y + 1, z);
+
+    if (up?.block === BlockID.Air) {
+      return false;
+    }
+
+    return (
+      x === 0 ||
+      x === this.size.width - 1 ||
+      y === 0 ||
+      y === this.size.height - 1 ||
+      z === 0 ||
+      z === this.size.width - 1
+    );
   }
 
   disposeChildren() {
