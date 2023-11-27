@@ -1,6 +1,6 @@
 import * as THREE from "three";
 
-import { Block } from "./Block";
+import { Block, RenderGeometry } from "./Block";
 import { textures, uiTextures } from "./textures";
 
 import { BlockID } from ".";
@@ -23,4 +23,7 @@ export class OakLogBlock extends Block {
     oakLogSideMaterial, // back
   ];
   uiTexture = uiTextures.oakLog;
+  geometry = RenderGeometry.Cube;
+  transparent = false;
+  canPassThrough = false;
 }

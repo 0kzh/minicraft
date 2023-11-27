@@ -1,5 +1,6 @@
 import * as THREE from "three";
 
+import { RenderGeometry } from "./Block";
 import { OreBlock } from "./OreBlock";
 import { textures, uiTextures } from "./textures";
 
@@ -13,4 +14,7 @@ export const CoalOreBlock = class extends OreBlock {
   scarcity = oreConfig["coal"].scarcity;
   material = coalOreMaterial;
   uiTexture = uiTextures.coal;
+  geometry = RenderGeometry.Cube;
+  transparent = false;
+  canPassThrough = false;
 };

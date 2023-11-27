@@ -2,6 +2,7 @@ import { wrap } from "comlink";
 import * as THREE from "three";
 
 import { BlockID } from "./Block";
+import { RenderGeometry } from "./Block/Block";
 import { BlockFactory } from "./Block/BlockFactory";
 
 // export const workerInstance = new ComlinkWorker<typeof import("./chunkWorker")>(
@@ -12,6 +13,7 @@ import chunkWorker from "./chunkWorker?worker&url";
 import { DataStore } from "./DataStore";
 
 const geometry = new THREE.BoxGeometry();
+const crossGeometry = new THREE.PlaneGeometry();
 
 export type InstanceData = {
   block: BlockID;
@@ -150,7 +152,14 @@ export class WorldChunk extends THREE.Group {
 
     for (const blockId of blockIDValues) {
       const block = BlockFactory.getBlock(blockId);
-      const mesh = new THREE.InstancedMesh(geometry, block.material, maxCount);
+      const blockGeometry = block.geometry;
+
+      const mesh = new THREE.InstancedMesh(
+        blockGeometry === RenderGeometry.Cube ? geometry : crossGeometry,
+        block.material,
+        maxCount
+      );
+
       mesh.name = block.constructor.name;
       mesh.count = 0;
       mesh.castShadow = true;
@@ -256,22 +265,42 @@ export class WorldChunk extends THREE.Group {
 
     // If the block is not air and doesn't have an instance id, create a new instance
     if (block && block.block !== BlockID.Air && block.instanceId == null) {
+      const blockClass = BlockFactory.getBlock(block.block);
       const mesh = this.children.find(
-        (instanceMesh) =>
-          instanceMesh.name ===
-          BlockFactory.getBlock(block.block).constructor.name
+        (instanceMesh) => instanceMesh.name === blockClass.constructor.name
       ) as THREE.InstancedMesh;
 
       if (mesh) {
-        const instanceId = mesh.count++;
-        this.setBlockInstanceId(x, y, z, instanceId);
+        if (blockClass.geometry == RenderGeometry.Cube) {
+          const instanceId = mesh.count++;
+          this.setBlockInstanceId(x, y, z, instanceId);
 
-        // Update the appropriate instanced mesh and re-compute the bounding sphere so raycasting works
-        const matrix = new THREE.Matrix4();
-        matrix.setPosition(x + 0.5, y + 0.5, z + 0.5);
-        mesh.setMatrixAt(instanceId, matrix);
-        mesh.instanceMatrix.needsUpdate = true;
-        mesh.computeBoundingSphere();
+          // Update the appropriate instanced mesh and re-compute the bounding sphere so raycasting works
+          const matrix = new THREE.Matrix4();
+          matrix.setPosition(x + 0.5, y + 0.5, z + 0.5);
+          mesh.setMatrixAt(instanceId, matrix);
+          mesh.instanceMatrix.needsUpdate = true;
+          mesh.computeBoundingSphere();
+        } else if (blockClass.geometry == RenderGeometry.Cross) {
+          console.log(mesh);
+          const instanceId1 = mesh.count++;
+          const instanceId2 = mesh.count++;
+          this.setBlockInstanceId(x, y, z, instanceId1);
+          this.setBlockInstanceId(x, y, z, instanceId2);
+
+          const matrix1 = new THREE.Matrix4();
+          matrix1.makeRotationY(Math.PI / 4);
+          matrix1.setPosition(x + 0.5, y + 0.5, z + 0.5);
+          mesh.setMatrixAt(instanceId1, matrix1);
+
+          const matrix2 = new THREE.Matrix4();
+          matrix2.makeRotationY(-Math.PI / 4);
+          matrix2.setPosition(x + 0.5, y + 0.5, z + 0.5);
+          mesh.setMatrixAt(instanceId2, matrix2);
+
+          mesh.instanceMatrix.needsUpdate = true;
+          mesh.computeBoundingSphere();
+        }
       }
     }
   }
@@ -357,6 +386,8 @@ export class WorldChunk extends THREE.Group {
     const front = this.getBlock(x, y, z + 1);
     const back = this.getBlock(x, y, z - 1);
 
+    const getBlockClass = (blockId: BlockID) => BlockFactory.getBlock(blockId);
+
     // If any of the block's sides are exposed, it's not obscured
     if (
       !up ||
@@ -365,18 +396,12 @@ export class WorldChunk extends THREE.Group {
       !right ||
       !front ||
       !back ||
-      up?.block === BlockID.Air ||
-      down?.block === BlockID.Air ||
-      left?.block === BlockID.Air ||
-      right?.block === BlockID.Air ||
-      front?.block === BlockID.Air ||
-      back?.block === BlockID.Air ||
-      up?.block === BlockID.Leaves ||
-      down?.block === BlockID.Leaves ||
-      left?.block === BlockID.Leaves ||
-      right?.block === BlockID.Leaves ||
-      front?.block === BlockID.Leaves ||
-      back?.block === BlockID.Leaves
+      getBlockClass(up.block).transparent ||
+      getBlockClass(down.block).transparent ||
+      getBlockClass(left.block).transparent ||
+      getBlockClass(right.block).transparent ||
+      getBlockClass(front.block).transparent ||
+      getBlockClass(back.block).transparent
     ) {
       return false;
     }

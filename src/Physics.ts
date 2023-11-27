@@ -2,6 +2,7 @@ import * as THREE from "three";
 
 import { BlockID } from "./Block";
 import { Block } from "./Block/Block";
+import { BlockFactory } from "./Block/BlockFactory";
 import { Player } from "./Player";
 import { World } from "./World";
 
@@ -92,19 +93,22 @@ export class Physics {
         for (let z = minZ; z <= maxZ; z++) {
           const block = world.getBlock(x, y, z);
           // If the block is solid, add it to the list of candidates
-          if (block && block.block !== BlockID.Air) {
-            candidates.push({
-              block: block.block,
-              x: x + 0.5,
-              y: y + 0.5,
-              z: z + 0.5,
-            });
-            this.addCollisionHelper({
-              block: block.block,
-              x: x + 0.5,
-              y: y + 0.5,
-              z: z + 0.5,
-            });
+          if (block) {
+            const blockClass = BlockFactory.getBlock(block.block);
+            if (!blockClass.canPassThrough) {
+              candidates.push({
+                block: block.block,
+                x: x + 0.5,
+                y: y + 0.5,
+                z: z + 0.5,
+              });
+              this.addCollisionHelper({
+                block: block.block,
+                x: x + 0.5,
+                y: y + 0.5,
+                z: z + 0.5,
+              });
+            }
           }
         }
       }

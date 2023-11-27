@@ -1,6 +1,6 @@
 import * as THREE from "three";
 
-import { Block } from "./Block";
+import { Block, RenderGeometry } from "./Block";
 import { textures, uiTextures } from "./textures";
 
 import { BlockID } from ".";
@@ -16,4 +16,7 @@ export class GrassBlock extends Block {
     new THREE.MeshLambertMaterial({ map: textures.grassSide }), // back
   ];
   uiTexture = uiTextures.grass;
+  geometry = RenderGeometry.Cube;
+  transparent = false;
+  canPassThrough = false;
 }

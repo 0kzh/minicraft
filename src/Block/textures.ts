@@ -23,6 +23,7 @@ export const textures = {
   oakLogSide: loadTexture("textures/oak_log_side.png"),
   oakLogTop: loadTexture("textures/oak_log_top.png"),
   leaves: loadTexture("textures/leaves.png"),
+  tallGrass: loadTexture("textures/tall_grass.png"),
 };
 
 export const uiTextures = {
@@ -34,4 +35,5 @@ export const uiTextures = {
   bedrock: "textures/bedrock_block.png",
   oakLog: "textures/oak_log_block.png",
   leaves: "textures/leaves_block.png",
+  tallGrass: "textures/tall_grass_block.png",
 };
