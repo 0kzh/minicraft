@@ -11,7 +11,7 @@ export class World extends THREE.Group {
   asyncLoading = true;
   chunkSize: WorldSize = {
     width: 16,
-    height: 64,
+    height: 32,
   };
 
   params: WorldParams = {

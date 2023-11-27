@@ -69,7 +69,7 @@ export class Player {
     70,
     window.innerWidth / window.innerHeight,
     0.1,
-    200
+    5000
   );
   cameraHelper = new THREE.CameraHelper(this.camera);
   boundsHelper = new THREE.Mesh(
@@ -291,8 +291,7 @@ export class Player {
           ?.setAttribute("style", `left: ${this.activeToolbarIndex * 11}%`);
         break;
       case "KeyW":
-        if (!this.wKeyPressed && performance.now() - this.lastWPressed < 150) {
-          console.log("sprint!");
+        if (!this.wKeyPressed && performance.now() - this.lastWPressed < 200) {
           this.isSprinting = true;
           this.input.z = this.maxSprintSpeed;
         } else {

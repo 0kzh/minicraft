@@ -9,6 +9,31 @@ import { Player } from "./Player";
 import { numberWithCommas } from "./util";
 import { World } from "./World";
 
+const vertexShader = `
+  varying vec3 worldPosition;
+  void main() {
+      vec4 mPosition = modelMatrix * vec4( position, 1.0 );
+      worldPosition = mPosition.xyz;
+      gl_Position = projectionMatrix * modelViewMatrix * vec4( position, 1.0 );
+  }
+`;
+
+const fragmentShader = `
+  uniform vec3 topColor;
+  uniform vec3 bottomColor;
+  uniform float offset;
+  uniform float exponent;
+
+  varying vec3 worldPosition;
+
+  void main() {
+
+    float h = normalize( worldPosition + offset ).y;
+    gl_FragColor = vec4( mix( bottomColor, topColor, max( pow( h, exponent ), 0.0 ) ), 1.0 );
+
+  }
+`;
+
 export default class Game {
   private renderer!: THREE.WebGLRenderer;
   private scene!: THREE.Scene;
@@ -16,15 +41,23 @@ export default class Game {
 
   private controls!: OrbitControls;
   private stats!: any;
+  private clock!: THREE.Clock;
 
+  private sky!: THREE.Mesh<THREE.BufferGeometry, THREE.ShaderMaterial>;
+  private sun!: THREE.DirectionalLight;
   private world!: World;
   private player!: Player;
   private physics!: Physics;
 
   private previousTime = 0;
 
+  private dayColor = new THREE.Color(0xc0d8ff);
+  private nightColor = new THREE.Color(0x10121e);
+  private sunsetColor = new THREE.Color(0xcc7a00);
+
   constructor() {
     this.previousTime = performance.now();
+    this.clock = new THREE.Clock();
 
     this.initScene();
     this.initStats();
@@ -44,16 +77,21 @@ export default class Game {
 
     this.orbitCamera = new THREE.PerspectiveCamera(
       75,
-      window.innerWidth / window.innerHeight
+      window.innerWidth / window.innerHeight,
+      0.1,
+      1000
     );
     this.orbitCamera.position.set(-32, 64, -32);
 
     this.renderer = new THREE.WebGLRenderer();
     this.renderer.shadowMap.enabled = false;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+
     this.renderer.setPixelRatio(window.devicePixelRatio);
     this.renderer.setSize(window.innerWidth, window.innerHeight);
-    this.renderer.setClearColor(0x80abfe);
+    // this.renderer.setClearColor(0x80abfe);
+    //transparent
+    this.renderer.setClearColor(0x000000, 0);
 
     document.body.appendChild(this.renderer.domElement);
 
@@ -61,27 +99,47 @@ export default class Game {
       this.orbitCamera,
       this.renderer.domElement
     );
-    this.controls.target.set(16, 0, 16);
+    this.controls.target.set(0, 0, 0);
     this.controls.update();
 
-    const sun = new THREE.DirectionalLight();
-    sun.intensity = 1.5;
-    sun.position.set(50, 50, 50);
-    sun.castShadow = true;
+    // Skybox
+    const uniforms = {
+      topColor: { type: "c", value: new THREE.Color(0xa0c0ff) },
+      bottomColor: { type: "c", value: new THREE.Color(0xffffff) },
+      offset: { type: "f", value: 99 },
+      exponent: { type: "f", value: 0.3 },
+    };
 
-    // Set the size of the sun's shadow box
-    sun.shadow.camera.left = -40;
-    sun.shadow.camera.right = 40;
-    sun.shadow.camera.top = 40;
-    sun.shadow.camera.bottom = -40;
-    sun.shadow.camera.near = 0.1;
-    sun.shadow.camera.far = 250;
-    sun.shadow.bias = -0.005;
-    sun.shadow.mapSize = new THREE.Vector2(512, 512);
-    this.scene.add(sun);
-    this.scene.add(sun.target);
+    const skyGeo = new THREE.SphereGeometry(4000, 32, 15);
+    const skyMat = new THREE.ShaderMaterial({
+      vertexShader: vertexShader,
+      fragmentShader: fragmentShader,
+      uniforms: uniforms,
+      side: THREE.BackSide,
+    });
+
+    this.sky = new THREE.Mesh(skyGeo, skyMat);
+    this.scene.add(this.sky);
 
     this.scene.fog = new THREE.Fog(0x80a0e0, 50, 100);
+    this.scene.fog.color.copy(uniforms.bottomColor.value);
+
+    this.sun = new THREE.DirectionalLight();
+    this.sun.intensity = 1.5;
+    this.sun.position.set(50, 50, 50);
+    this.sun.castShadow = true;
+
+    // Set the size of the sun's shadow box
+    this.sun.shadow.camera.left = -40;
+    this.sun.shadow.camera.right = 40;
+    this.sun.shadow.camera.top = 40;
+    this.sun.shadow.camera.bottom = -40;
+    this.sun.shadow.camera.near = 0.1;
+    this.sun.shadow.camera.far = 250;
+    this.sun.shadow.bias = -0.005;
+    this.sun.shadow.mapSize = new THREE.Vector2(512, 512);
+    this.scene.add(this.sun);
+    this.scene.add(this.sun.target);
 
     const ambient = new THREE.AmbientLight();
     ambient.intensity = 0.2;
@@ -134,6 +192,77 @@ export default class Game {
     this.renderer.setSize(window.innerWidth, window.innerHeight);
   }
 
+  updateSkyColor() {
+    const elapsedTime = this.clock.getElapsedTime();
+    const cycleDuration = 24; // Duration of a day in seconds
+    const cycleTime = elapsedTime % cycleDuration;
+
+    let topColor: THREE.Color;
+    let bottomColor: THREE.Color;
+
+    if (cycleTime < cycleDuration / 2) {
+      // Day time
+      topColor = this.dayColor
+        .clone()
+        .lerp(this.nightColor, cycleTime / (cycleDuration / 2));
+      this.sun.intensity = 1 - cycleTime / (cycleDuration / 2); // Sun intensity decreases as the day progresses
+    } else {
+      // Night time
+      topColor = this.nightColor
+        .clone()
+        .lerp(
+          this.dayColor,
+          (cycleTime - cycleDuration / 2) / (cycleDuration / 2)
+        );
+      this.sun.intensity =
+        (cycleTime - cycleDuration / 2) / (cycleDuration / 2); // Sun intensity increases as the night progresses
+    }
+
+    const dayStart = 0;
+    const sunsetStart = cycleDuration * 0.4; // Start sunset at 40% of the cycle
+    const nightStart = cycleDuration * 0.5; // Start night at 50% of the cycle
+    const sunriseStart = cycleDuration * 0.9; // Start sunrise at 90% of the cycle
+
+    if (cycleTime >= dayStart && cycleTime < sunsetStart) {
+      // Day time
+      bottomColor = this.dayColor
+        .clone()
+        .lerp(
+          this.sunsetColor,
+          (cycleTime - dayStart) / (sunsetStart - dayStart)
+        );
+    } else if (cycleTime >= sunsetStart && cycleTime < nightStart) {
+      // Sunset
+      bottomColor = this.sunsetColor
+        .clone()
+        .lerp(
+          this.nightColor,
+          (cycleTime - sunsetStart) / (nightStart - sunsetStart)
+        );
+    } else if (cycleTime >= nightStart && cycleTime < sunriseStart) {
+      // Night time
+      bottomColor = this.nightColor
+        .clone()
+        .lerp(
+          this.sunsetColor,
+          (cycleTime - nightStart) / (sunriseStart - nightStart)
+        );
+    } else {
+      // Sunrise
+      bottomColor = this.sunsetColor
+        .clone()
+        .lerp(
+          this.dayColor,
+          (cycleTime - sunriseStart) / (cycleDuration - sunriseStart)
+        );
+    }
+
+    this.sky.material.uniforms.topColor.value = topColor;
+    this.sky.material.uniforms.bottomColor.value = bottomColor;
+
+    this.scene.fog?.color.copy(bottomColor);
+  }
+
   draw() {
     const currentTime = performance.now();
     const deltaTime = (currentTime - this.previousTime) / 1000;
@@ -141,6 +270,8 @@ export default class Game {
     requestAnimationFrame(() => {
       this.draw();
     });
+
+    this.updateSkyColor();
 
     this.physics.update(deltaTime, this.player, this.world);
     this.world.update(this.player);
