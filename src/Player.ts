@@ -9,29 +9,31 @@ import { BlockID } from "./Block";
 import { BlockFactory } from "./Block/BlockFactory";
 import { World } from "./World";
 
-function cube(size: number) {
-  const h = size * 0.5;
+function cuboid(width: number, height: number, depth: number) {
+  const hw = width * 0.5;
+  const hh = height * 0.5;
+  const hd = depth * 0.5;
 
   const position = [
-    [-h, -h, -h],
-    [-h, h, -h],
-    [h, h, -h],
-    [h, -h, -h],
-    [-h, -h, -h],
+    [-hw, -hh, -hd],
+    [-hw, hh, -hd],
+    [hw, hh, -hd],
+    [hw, -hh, -hd],
+    [-hw, -hh, -hd],
 
-    [-h, -h, h],
-    [-h, h, h],
-    [-h, h, -h],
-    [-h, h, h],
+    [-hw, -hh, hd],
+    [-hw, hh, hd],
+    [-hw, hh, -hd],
+    [-hw, hh, hd],
 
-    [h, h, h],
-    [h, h, -h],
-    [h, h, h],
+    [hw, hh, hd],
+    [hw, hh, -hd],
+    [hw, hh, hd],
 
-    [h, -h, h],
-    [h, -h, -h],
-    [h, -h, h],
-    [-h, -h, h],
+    [hw, -hh, hd],
+    [hw, -hh, -hd],
+    [hw, -hh, hd],
+    [-hw, -hh, hd],
   ].flat();
 
   return position;
@@ -39,12 +41,12 @@ function cube(size: number) {
 
 const selectionMaterial = new LineMaterial({
   color: 0x000000,
-  opacity: 0.8,
-  linewidth: 2,
+  opacity: 0.9,
+  linewidth: 1,
   resolution: new THREE.Vector2(window.innerWidth, window.innerHeight),
 });
 const selectionLineGeometry = new LineGeometry();
-selectionLineGeometry.setPositions(cube(1.001));
+selectionLineGeometry.setPositions(cuboid(1.001, 1.001, 1.001));
 const CENTER_SCREEN = new THREE.Vector2(0, 0);
 
 export class Player {
@@ -85,6 +87,7 @@ export class Player {
     5
   );
   selectedCoords: THREE.Vector3 | null = null;
+  selectedBlockSize: THREE.Vector3 | null = null;
   blockPlacementCoords: THREE.Vector3 | null = null;
 
   toolbar: (BlockID | null)[] = [
@@ -176,7 +179,6 @@ export class Player {
 
     if (intersections.length > 0) {
       const intersection = intersections[0];
-      // console.log(intersection.object.name, intersection.point);
 
       // Get the chunk associated with the seclected block
       const chunk = intersection.object.parent;
@@ -193,10 +195,19 @@ export class Player {
         blockMatrix
       );
 
+      // Undo rotation from block matrix
+      const rotationMatrix = new THREE.Matrix4().extractRotation(blockMatrix);
+      const inverseRotationMatrix = rotationMatrix.invert();
+      blockMatrix.multiply(inverseRotationMatrix);
+
       // Set the selected coordinates to origin of chunk
       // Then apply transformation matrix of block to get block coords
       this.selectedCoords = chunk.position.clone();
       this.selectedCoords.applyMatrix4(blockMatrix);
+
+      // Get the bounding box of the selected block
+      const boundingBox = new THREE.Box3().setFromObject(intersection.object);
+      this.selectedBlockSize = boundingBox.getSize(new THREE.Vector3());
 
       if (this.activeBlockId !== BlockID.Air && intersection.normal) {
         // Update block placement coords to be 1 block over in the direction of the normal

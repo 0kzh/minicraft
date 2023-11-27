@@ -42,6 +42,10 @@ export class World extends THREE.Group {
         },
       },
     },
+    grass: {
+      frequency: 0.02,
+      patchSize: 5,
+    },
   };
 
   // Used for persisting changes to the world

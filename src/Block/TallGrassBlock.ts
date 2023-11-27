@@ -5,7 +5,7 @@ import { textures, uiTextures } from "./textures";
 
 import { BlockID } from ".";
 
-const tallGrassMaterial = new THREE.MeshLambertMaterial({
+const tallGrassMaterial = new THREE.MeshBasicMaterial({
   map: textures.tallGrass,
 });
 

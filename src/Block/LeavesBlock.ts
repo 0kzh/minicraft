@@ -5,7 +5,9 @@ import { textures, uiTextures } from "./textures";
 
 import { BlockID } from ".";
 
-const leavesMaterial = new THREE.MeshLambertMaterial({ map: textures.leaves });
+const leavesMaterial = new THREE.MeshLambertMaterial({
+  map: textures.leaves,
+});
 leavesMaterial.transparent = true;
 leavesMaterial.side = THREE.DoubleSide;
 
@@ -15,5 +17,5 @@ export class LeavesBlock extends Block {
   uiTexture = uiTextures.leaves;
   geometry = RenderGeometry.Cube;
   transparent = true;
-  canPassThrough = true;
+  canPassThrough = false;
 }

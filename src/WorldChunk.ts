@@ -17,7 +17,7 @@ const crossGeometry = new THREE.PlaneGeometry();
 
 export type InstanceData = {
   block: BlockID;
-  instanceId: number | null; // reference to mesh instanceId
+  instanceIds: number[]; // reference to mesh instanceId
 };
 
 export type WorldParams = {
@@ -47,6 +47,10 @@ export type WorldParams = {
         max: number;
       };
     };
+  };
+  grass: {
+    frequency: number;
+    patchSize: number;
   };
 };
 
@@ -104,7 +108,7 @@ export class WorldChunk extends THREE.Group {
         for (let z = 0; z < this.size.width; z++) {
           row.push({
             block: data[x][y][z],
-            instanceId: null,
+            instanceIds: [],
           });
         }
         slice.push(row);
@@ -173,6 +177,7 @@ export class WorldChunk extends THREE.Group {
       for (let y = 0; y < this.size.height; y++) {
         for (let z = 0; z < this.size.width; z++) {
           const block = data[x][y][z];
+          const blockClass = BlockFactory.getBlock(block);
 
           if (block === BlockID.Air) {
             continue;
@@ -184,17 +189,33 @@ export class WorldChunk extends THREE.Group {
             continue;
           }
 
-          const instanceId = mesh.count;
-
           if (
             block &&
             !this.isBlockObscured(x, y, z) &&
             !this.isBorderBlock(x, y, z)
           ) {
-            matrix.setPosition(x + 0.5, y + 0.5, z + 0.5); // lower left corner
-            mesh.setMatrixAt(instanceId, matrix);
-            this.setBlockInstanceId(x, y, z, instanceId);
-            mesh.count++;
+            if (blockClass.geometry == RenderGeometry.Cube) {
+              const instanceId = mesh.count++;
+              this.setBlockInstanceIds(x, y, z, [instanceId]);
+
+              const matrix = new THREE.Matrix4();
+              matrix.setPosition(x + 0.5, y + 0.5, z + 0.5);
+              mesh.setMatrixAt(instanceId, matrix);
+            } else if (blockClass.geometry == RenderGeometry.Cross) {
+              const instanceId1 = mesh.count++;
+              const instanceId2 = mesh.count++;
+              this.setBlockInstanceIds(x, y, z, [instanceId1, instanceId2]);
+
+              const matrix1 = new THREE.Matrix4();
+              matrix1.makeRotationY(Math.PI / 4);
+              matrix1.setPosition(x + 0.5, y + 0.5, z + 0.5);
+              mesh.setMatrixAt(instanceId1, matrix1);
+
+              const matrix2 = new THREE.Matrix4();
+              matrix2.makeRotationY(-Math.PI / 4);
+              matrix2.setPosition(x + 0.5, y + 0.5, z + 0.5);
+              mesh.setMatrixAt(instanceId2, matrix2);
+            }
           }
         }
       }
@@ -241,9 +262,9 @@ export class WorldChunk extends THREE.Group {
    * Removes the block at (x, y, z)
    */
   removeBlock(x: number, y: number, z: number) {
+    console.log(`Removing block at ${x}, ${y}, ${z}`);
     const block = this.getBlock(x, y, z);
     if (block && block.block !== BlockID.Air) {
-      console.log(`Removing block at ${x}, ${y}, ${z}`);
       this.deleteBlockInstance(x, y, z);
       this.setBlockId(x, y, z, BlockID.Air);
       this.dataStore.set(
@@ -264,7 +285,11 @@ export class WorldChunk extends THREE.Group {
     const block = this.getBlock(x, y, z);
 
     // If the block is not air and doesn't have an instance id, create a new instance
-    if (block && block.block !== BlockID.Air && block.instanceId == null) {
+    if (
+      block &&
+      block.block !== BlockID.Air &&
+      block.instanceIds.length === 0
+    ) {
       const blockClass = BlockFactory.getBlock(block.block);
       const mesh = this.children.find(
         (instanceMesh) => instanceMesh.name === blockClass.constructor.name
@@ -273,7 +298,7 @@ export class WorldChunk extends THREE.Group {
       if (mesh) {
         if (blockClass.geometry == RenderGeometry.Cube) {
           const instanceId = mesh.count++;
-          this.setBlockInstanceId(x, y, z, instanceId);
+          this.setBlockInstanceIds(x, y, z, [instanceId]);
 
           // Update the appropriate instanced mesh and re-compute the bounding sphere so raycasting works
           const matrix = new THREE.Matrix4();
@@ -285,8 +310,7 @@ export class WorldChunk extends THREE.Group {
           console.log(mesh);
           const instanceId1 = mesh.count++;
           const instanceId2 = mesh.count++;
-          this.setBlockInstanceId(x, y, z, instanceId1);
-          this.setBlockInstanceId(x, y, z, instanceId2);
+          this.setBlockInstanceIds(x, y, z, [instanceId1, instanceId2]);
 
           const matrix1 = new THREE.Matrix4();
           matrix1.makeRotationY(Math.PI / 4);
@@ -311,56 +335,52 @@ export class WorldChunk extends THREE.Group {
   deleteBlockInstance(x: number, y: number, z: number) {
     const block = this.getBlock(x, y, z);
 
-    if (block?.block === BlockID.Air || block?.instanceId == null) {
+    if (block?.block === BlockID.Air || !block?.instanceIds.length) {
       return;
     }
 
-    // Get the mesh and instance id of the block
+    // Get the mesh of the block
     const mesh = this.children.find(
       (instanceMesh) =>
         instanceMesh.name ===
         BlockFactory.getBlock(block.block).constructor.name
     ) as THREE.InstancedMesh;
-    const instanceId = block.instanceId;
 
-    // We can't remove instance directly, so we need to swap with last instance and decrement count by 1
-    const lastMatrix = new THREE.Matrix4();
-    mesh.getMatrixAt(mesh.count - 1, lastMatrix);
+    // We can't remove instances directly, so we need to swap each with the last instance and decrement count by 1
+    block.instanceIds.forEach((instanceId, index) => {
+      const lastMatrix = new THREE.Matrix4();
+      mesh.getMatrixAt(mesh.count - 1, lastMatrix);
 
-    // Also need to get block coords of instance to update instance id of the block
-    const lastBlockCoords = new THREE.Vector3();
-    lastBlockCoords.setFromMatrixPosition(lastMatrix);
-    this.setBlockInstanceId(
-      Math.floor(lastBlockCoords.x),
-      Math.floor(lastBlockCoords.y),
-      Math.floor(lastBlockCoords.z),
-      instanceId
-    );
+      // Also need to get block coords of instance to update instance id of the block
+      const lastBlockCoords = new THREE.Vector3();
+      lastBlockCoords.setFromMatrixPosition(lastMatrix);
+      this.setBlockInstanceIds(
+        Math.floor(lastBlockCoords.x),
+        Math.floor(lastBlockCoords.y),
+        Math.floor(lastBlockCoords.z),
+        [block.instanceIds[index]]
+      );
 
-    // Swap transformation matrices
-    mesh.setMatrixAt(instanceId, lastMatrix);
+      // Swap transformation matrices
+      mesh.setMatrixAt(instanceId, lastMatrix);
 
-    // Decrement instance count
-    mesh.count--;
+      // Decrement instance count
+      mesh.count--;
+    });
 
     // Notify the instanced mesh we updated the instance matrix
     mesh.instanceMatrix.needsUpdate = true;
     mesh.computeBoundingSphere();
 
-    this.setBlockInstanceId(x, y, z, null);
+    this.setBlockInstanceIds(x, y, z, []);
   }
 
   /**
    * Sets the block instance data at (x, y, z) for this chunk
    */
-  setBlockInstanceId(
-    x: number,
-    y: number,
-    z: number,
-    instanceId: number | null
-  ) {
+  setBlockInstanceIds(x: number, y: number, z: number, instanceIds: number[]) {
     if (this.inBounds(x, y, z)) {
-      this.data[x][y][z].instanceId = instanceId;
+      this.data[x][y][z].instanceIds = instanceIds;
     }
   }
 
@@ -412,7 +432,7 @@ export class WorldChunk extends THREE.Group {
   isBorderBlock(x: number, y: number, z: number): boolean {
     const up = this.getBlock(x, y + 1, z);
 
-    if (up?.block === BlockID.Air) {
+    if (up?.block === BlockID.Air || up?.block === BlockID.TallGrass) {
       return false;
     }
 

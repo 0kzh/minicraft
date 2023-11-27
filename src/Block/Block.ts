@@ -5,9 +5,11 @@ export enum RenderGeometry {
   Cross,
 }
 
+type MaterialType = THREE.MeshLambertMaterial | THREE.MeshBasicMaterial;
+
 export abstract class Block {
   abstract id: BlockID;
-  abstract material: THREE.MeshLambertMaterial | THREE.MeshLambertMaterial[];
+  abstract material: MaterialType | MaterialType[];
   abstract uiTexture: string;
   abstract geometry: RenderGeometry;
   abstract transparent: boolean;
