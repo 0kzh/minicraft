@@ -100,7 +100,7 @@ export class Player {
     BlockID.OakLog,
     BlockID.Leaves,
     BlockID.TallGrass,
-    BlockID.FlowerDandelion,
+    BlockID.RedstoneLamp,
   ];
   activeToolbarIndex = 0;
 

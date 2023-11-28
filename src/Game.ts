@@ -143,7 +143,7 @@ export default class Game {
     ambient.intensity = 0.2;
     this.scene.add(ambient);
 
-    this.world = new World();
+    this.world = new World(0, this.scene);
     this.scene.add(this.world);
 
     this.player = new Player(this.scene);
@@ -192,7 +192,7 @@ export default class Game {
 
   updateSkyColor() {
     const elapsedTime = this.clock.getElapsedTime();
-    const cycleDuration = 300; // Duration of a day in seconds
+    const cycleDuration = 24; // Duration of a day in seconds
     const cycleTime = elapsedTime % cycleDuration;
 
     let topColor: THREE.Color;

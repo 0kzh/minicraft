@@ -1,11 +1,14 @@
 import * as THREE from "three";
 
 import { BlockID } from "./Block";
+import { BlockFactory } from "./Block/BlockFactory";
+import { LightSourceBlock } from "./Block/LightSourceBlock";
 import { DataStore } from "./DataStore";
 import { Player } from "./Player";
 import { WorldChunk, WorldParams, WorldSize } from "./WorldChunk";
 
 export class World extends THREE.Group {
+  scene: THREE.Scene;
   seed: number;
   renderDistance = 10;
   asyncLoading = true;
@@ -53,10 +56,12 @@ export class World extends THREE.Group {
 
   // Used for persisting changes to the world
   dataStore = new DataStore();
+  pointLights = new THREE.Group();
 
-  constructor(seed = 0) {
+  constructor(seed = 0, scene: THREE.Scene) {
     super();
     this.seed = seed;
+    this.scene = scene;
   }
 
   /**
@@ -64,7 +69,9 @@ export class World extends THREE.Group {
    */
   regenerate(player: Player) {
     this.children.forEach((chunk) => {
-      (chunk as WorldChunk).disposeChildren();
+      if (chunk instanceof WorldChunk) {
+        chunk.disposeChildren();
+      }
     });
     this.clear();
     this.update(player);
@@ -151,7 +158,10 @@ export class World extends THREE.Group {
     });
 
     chunksToRemove.forEach((chunk) => {
-      (chunk as WorldChunk).disposeChildren();
+      if (chunk instanceof WorldChunk) {
+        chunk.disposeChildren();
+      }
+
       this.remove(chunk);
       console.log(
         `Removed chunk at X: ${chunk.userData.x} Z: ${chunk.userData.z}`
@@ -181,6 +191,20 @@ export class World extends THREE.Group {
 
     if (chunk && chunk.loaded) {
       chunk.addBlock(coords.block.x, coords.block.y, coords.block.z, block);
+
+      // if adding a light, convert to point light
+      if (block === BlockID.RedstoneLamp) {
+        const blockClass = BlockFactory.getBlock(block) as LightSourceBlock;
+        const light = new THREE.PointLight(
+          blockClass.color,
+          blockClass.intensity,
+          blockClass.distance,
+          blockClass.decay
+        );
+        light.position.set(x + 0.5, y + 0.5, z + 0.5);
+        console.log("Adding light", x, y, z);
+        this.scene.add(light);
+      }
 
       // Hide any blocks that may be totally obscured
       this.hideBlockIfNeeded(x - 1, y, z);

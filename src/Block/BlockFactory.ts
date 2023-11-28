@@ -9,6 +9,7 @@ import { GrassBlock } from "./GrassBlock";
 import { IronOreBlock } from "./IronOreBlock";
 import { LeavesBlock } from "./LeavesBlock";
 import { OakLogBlock } from "./OakLogBlock";
+import { RedstoneLampBlock } from "./RedstoneLampBlock";
 import { StoneBlock } from "./StoneBlock";
 import { TallGrassBlock } from "./TallGrassBlock";
 
@@ -29,6 +30,7 @@ export class BlockFactory {
     [BlockID.TallGrass]: TallGrassBlock,
     [BlockID.FlowerRose]: FlowerRoseBlock,
     [BlockID.FlowerDandelion]: FlowerDandelionBlock,
+    [BlockID.RedstoneLamp]: RedstoneLampBlock,
   };
 
   private static blockInstances: { [id: number]: Block } = {};
