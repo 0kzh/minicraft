@@ -53,15 +53,25 @@ export class Physics {
 
   update(dt: number, player: Player, world: World) {
     this.accumulator += dt;
+    const blockUnderneath =
+      this.getBlockUnderneath(player, world)?.block || BlockID.Air;
 
     while (this.accumulator >= this.stepSize) {
       player.velocity.y += Physics.GRAVITY * this.stepSize;
-      player.applyInputs(this.stepSize);
+      player.applyInputs(this.stepSize, blockUnderneath);
       this.detectCollisions(player, world);
       this.accumulator -= this.stepSize;
     }
 
     player.update(world);
+  }
+
+  getBlockUnderneath(player: Player, world: World) {
+    return world.getBlock(
+      Math.floor(player.position.x),
+      Math.floor(player.position.y - player.height / 2 - 1),
+      Math.floor(player.position.z)
+    );
   }
 
   detectCollisions(player: Player, world: World) {

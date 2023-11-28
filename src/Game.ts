@@ -3,6 +3,7 @@ import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import Stats from "three/examples/jsm/libs/stats.module";
 
+import audioManager from "./audio/AudioManager";
 import { createUI } from "./GUI";
 import { Physics } from "./Physics";
 import { Player } from "./Player";
@@ -67,6 +68,7 @@ export default class Game {
     this.initScene();
     this.initStats();
     this.initListeners();
+    this.initAudio();
   }
 
   initStats() {
@@ -140,6 +142,7 @@ export default class Game {
     this.scene.add(this.sun);
     this.scene.add(this.sun.target);
     this.sunHelper = new THREE.DirectionalLightHelper(this.sun);
+    this.sunHelper.visible = false;
     this.scene.add(this.sunHelper);
 
     this.shadowHelper = new THREE.CameraHelper(this.sun.shadow.camera);
@@ -156,17 +159,26 @@ export default class Game {
     this.player = new Player(this.scene);
     this.physics = new Physics(this.scene);
 
-    const sunAngle = 0;
-    const sunX = this.sunDistance * Math.cos(sunAngle);
-    const sunY = this.sunDistance * Math.sin(sunAngle);
-    this.sun.position.set(sunX, sunY, this.player.camera.position.z); // Update the position of the sun
-    this.sun.position.add(this.player.camera.position);
-
-    this.sun.target.position.copy(this.player.camera.position);
+    this.updateSunPosition(0);
 
     createUI(this.world, this.player, this.physics, this.scene);
 
     this.draw();
+  }
+
+  initAudio() {
+    const listener = new THREE.AudioListener();
+    this.player.camera.add(listener);
+
+    const sound = new THREE.Audio(listener);
+
+    const audioLoader = new THREE.AudioLoader();
+    audioLoader.load("audio/ambient.mp3", function (buffer) {
+      sound.setBuffer(buffer);
+      sound.setLoop(true);
+      sound.setVolume(0.5);
+      sound.play();
+    });
   }
 
   onMouseDown(event: MouseEvent) {
@@ -280,8 +292,14 @@ export default class Game {
 
     const sunAngle =
       ((2 * Math.PI) / cycleDuration) * (cycleTime + cycleDuration / 6); // Calculate the angle of the sun based on the cycle time with a phase shift of T/4
-    const sunX = this.sunDistance * Math.cos(sunAngle); // Calculate the X position of the sun
-    const sunY = this.sunDistance * Math.sin(sunAngle); // Calculate the Y position of the sun
+    this.updateSunPosition(sunAngle);
+
+    this.lastShadowUpdate = performance.now();
+  }
+
+  updateSunPosition(angle: number) {
+    const sunX = this.sunDistance * Math.cos(angle); // Calculate the X position of the sun
+    const sunY = this.sunDistance * Math.sin(angle); // Calculate the Y position of the sun
     this.sun.position.set(sunX, sunY, this.player.camera.position.z); // Update the position of the sun
     this.sun.position.add(this.player.camera.position);
 
@@ -290,8 +308,6 @@ export default class Game {
 
     this.sunHelper.update();
     this.shadowHelper.update();
-
-    this.lastShadowUpdate = performance.now();
   }
 
   draw() {

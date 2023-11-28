@@ -1,6 +1,7 @@
 import { wrap } from "comlink";
 import * as THREE from "three";
 
+import audioManager from "./audio/AudioManager";
 import { BlockID } from "./Block";
 import { RenderGeometry } from "./Block/Block";
 import { BlockFactory } from "./Block/BlockFactory";
@@ -269,6 +270,7 @@ export class WorldChunk extends THREE.Group {
     console.log(`Removing block at ${x}, ${y}, ${z}`);
     const block = this.getBlock(x, y, z);
     if (block && block.block !== BlockID.Air) {
+      this.playBlockSound(block.block);
       this.deleteBlockInstance(x, y, z);
       this.setBlockId(x, y, z, BlockID.Air);
       this.dataStore.set(
@@ -279,6 +281,25 @@ export class WorldChunk extends THREE.Group {
         z,
         BlockID.Air
       );
+    }
+  }
+
+  async playBlockSound(blockId: BlockID) {
+    switch (blockId) {
+      case BlockID.Grass:
+      case BlockID.Dirt:
+      case BlockID.Leaves:
+      case BlockID.TallGrass:
+      case BlockID.FlowerDandelion:
+      case BlockID.FlowerRose:
+        audioManager.play("dig.grass");
+        break;
+      case BlockID.OakLog:
+        audioManager.play("dig.wood");
+        break;
+      default:
+        audioManager.play("dig.stone");
+        break;
     }
   }
 

@@ -10,7 +10,7 @@ import { WorldChunk, WorldParams, WorldSize } from "./WorldChunk";
 export class World extends THREE.Group {
   scene: THREE.Scene;
   seed: number;
-  renderDistance = 8;
+  renderDistance = 2;
   asyncLoading = true;
   chunkSize: WorldSize = {
     width: 16,
@@ -97,12 +97,6 @@ export class World extends THREE.Group {
     const chunksToAdd = this.getChunksToAdd(visibleChunks);
     this.removeUnusedChunks(visibleChunks);
 
-    const playerPos = this.worldToChunkCoords(
-      player.position.x,
-      player.position.y,
-      player.position.z
-    );
-
     if (chunksToAdd.length > 0) {
       console.log("Chunks to add", chunksToAdd);
       this.chunkQueue = [...chunksToAdd, ...this.chunkQueue];
@@ -111,12 +105,7 @@ export class World extends THREE.Group {
       const chunkQueueSet = new Set();
       this.chunkQueue = this.chunkQueue.filter((chunk) => {
         const key = this.getChunkKey(chunk.x, chunk.z);
-        const playerInRenderDistance =
-          Math.sqrt(
-            (playerPos.chunk.x - chunk.x) ** 2 +
-              (playerPos.chunk.z - chunk.z) ** 2
-          ) <= this.renderDistance;
-        if (chunkQueueSet.has(key) || !playerInRenderDistance) {
+        if (chunkQueueSet.has(key)) {
           return false;
         } else {
           chunkQueueSet.add(key);
@@ -133,6 +122,8 @@ export class World extends THREE.Group {
         this.generateChunk(chunk.x, chunk.z);
         this.lastChunkLoadTime = performance.now();
       }
+    } else {
+      console.log("Chunk queue empty");
     }
   }
 

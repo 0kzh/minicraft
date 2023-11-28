@@ -5,6 +5,7 @@ import { Line2 } from "three/examples/jsm/lines/Line2.js";
 import { LineGeometry } from "three/examples/jsm/lines/LineGeometry.js";
 import { LineMaterial } from "three/examples/jsm/lines/LineMaterial.js";
 
+import audioManager from "./audio/AudioManager";
 import { BlockID } from "./Block";
 import { BlockFactory } from "./Block/BlockFactory";
 import { World } from "./World";
@@ -67,6 +68,8 @@ export class Player {
   lastWPressed = 0;
   isSprinting = false;
 
+  lastStepSoundPlayed = 0;
+
   camera = new THREE.PerspectiveCamera(
     70,
     window.innerWidth / window.innerHeight,
@@ -119,7 +122,7 @@ export class Player {
     document.addEventListener("keyup", this.onKeyUp.bind(this));
   }
 
-  applyInputs(dt: number) {
+  applyInputs(dt: number, blockUnderneath: BlockID) {
     if (this.controls.isLocked) {
       // Normalize the input vector if more than one key is pressed
       if (this.input.length() > 1) {
@@ -132,6 +135,16 @@ export class Player {
 
       this.velocity.x = this.input.x;
       this.velocity.z = this.input.z;
+
+      // play step sound
+      if (this.onGround && this.input.length() > 0) {
+        const minTimeout = this.isSprinting ? 300 : 400;
+        if (performance.now() - this.lastStepSoundPlayed > minTimeout) {
+          this.playWalkSound(blockUnderneath);
+          this.lastStepSoundPlayed = performance.now();
+        }
+      }
+
       if (this.spacePressed && this.onGround) {
         this.velocity.y = this.jumpSpeed;
       }
@@ -154,6 +167,25 @@ export class Player {
     const posZ = document.getElementById("player-pos-z");
     if (posZ) {
       posZ.innerHTML = `z: ${this.position.z.toFixed(3)}`;
+    }
+  }
+
+  async playWalkSound(blockUnderneath: BlockID) {
+    switch (blockUnderneath) {
+      case BlockID.Grass:
+      case BlockID.Dirt:
+      case BlockID.Leaves:
+        audioManager.play("step.grass");
+        break;
+      case BlockID.OakLog:
+        audioManager.play("step.wood");
+        break;
+      case BlockID.Stone:
+      case BlockID.CoalOre:
+      case BlockID.IronOre:
+      case BlockID.Bedrock:
+        audioManager.play("step.stone");
+        break;
     }
   }
 
