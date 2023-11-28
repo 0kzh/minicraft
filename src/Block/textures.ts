@@ -24,6 +24,8 @@ export const textures = {
   oakLogTop: loadTexture("textures/oak_log_top.png"),
   leaves: loadTexture("textures/leaves.png"),
   tallGrass: loadTexture("textures/tall_grass.png"),
+  flowerRose: loadTexture("textures/flower_rose.png"),
+  flowerDandelion: loadTexture("textures/flower_dandelion.png"),
 };
 
 export const uiTextures = {
@@ -36,4 +38,6 @@ export const uiTextures = {
   oakLog: "textures/oak_log_block.png",
   leaves: "textures/leaves_block.png",
   tallGrass: "textures/tall_grass_block.png",
+  flowerRose: "textures/flower_rose.png",
+  flowerDandelion: "textures/flower_dandelion.png",
 };

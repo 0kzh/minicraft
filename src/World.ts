@@ -46,6 +46,9 @@ export class World extends THREE.Group {
       frequency: 0.02,
       patchSize: 5,
     },
+    flowers: {
+      frequency: 0.0075,
+    },
   };
 
   // Used for persisting changes to the world
@@ -82,6 +85,7 @@ export class World extends THREE.Group {
     if (chunksToAdd.length > 0) {
       console.log("Chunks to add", chunksToAdd);
     }
+
     for (const chunk of chunksToAdd) {
       this.generateChunk(chunk.x, chunk.z);
     }

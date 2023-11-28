@@ -3,6 +3,8 @@ import { BedrockBlock } from "./BedrockBlock";
 import { Block } from "./Block";
 import { CoalOreBlock } from "./CoalOreBlock";
 import { DirtBlock } from "./DirtBlock";
+import { FlowerDandelionBlock } from "./FlowerDandelionBlock";
+import { FlowerRoseBlock } from "./FlowerRoseBlock";
 import { GrassBlock } from "./GrassBlock";
 import { IronOreBlock } from "./IronOreBlock";
 import { LeavesBlock } from "./LeavesBlock";
@@ -25,6 +27,8 @@ export class BlockFactory {
     [BlockID.OakLog]: OakLogBlock,
     [BlockID.Leaves]: LeavesBlock,
     [BlockID.TallGrass]: TallGrassBlock,
+    [BlockID.FlowerRose]: FlowerRoseBlock,
+    [BlockID.FlowerDandelion]: FlowerDandelionBlock,
   };
 
   private static blockInstances: { [id: number]: Block } = {};
@@ -39,5 +43,9 @@ export class BlockFactory {
       }
     }
     return this.blockInstances[id];
+  }
+
+  static getAllBlocks(): Block[] {
+    return Object.keys(this.blockTypes).map((id) => this.getBlock(+id));
   }
 }

@@ -73,6 +73,7 @@ export class Player {
     0.1,
     5000
   );
+
   cameraHelper = new THREE.CameraHelper(this.camera);
   boundsHelper = new THREE.Mesh(
     new THREE.CylinderGeometry(this.radius, this.radius, this.height, 16),
@@ -99,6 +100,7 @@ export class Player {
     BlockID.OakLog,
     BlockID.Leaves,
     BlockID.TallGrass,
+    BlockID.FlowerDandelion,
   ];
   activeToolbarIndex = 0;
 

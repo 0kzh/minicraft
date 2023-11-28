@@ -52,6 +52,9 @@ export type WorldParams = {
     frequency: number;
     patchSize: number;
   };
+  flowers: {
+    frequency: number;
+  };
 };
 
 export type WorldSize = {
@@ -431,8 +434,8 @@ export class WorldChunk extends THREE.Group {
 
   isBorderBlock(x: number, y: number, z: number): boolean {
     const up = this.getBlock(x, y + 1, z);
-
-    if (up?.block === BlockID.Air || up?.block === BlockID.TallGrass) {
+    const upBlockClass = up ? BlockFactory.getBlock(up.block) : null;
+    if (upBlockClass?.canPassThrough) {
       return false;
     }
 
