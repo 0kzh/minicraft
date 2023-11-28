@@ -105,7 +105,7 @@ export class Player {
   activeToolbarIndex = 0;
 
   constructor(scene: THREE.Scene) {
-    this.camera.position.set(32, 72, 32);
+    this.camera.position.set(32, 20, 32);
     this.controls.lock();
     this.boundsHelper.visible = false;
     this.cameraHelper.visible = false;
@@ -325,7 +325,7 @@ export class Player {
         this.input.x = this.maxSpeed;
         break;
       case "KeyR":
-        this.position.set(32, 72, 32);
+        this.position.set(32, 20, 32);
         this.velocity.set(0, 0, 0);
         break;
       case "Space":

@@ -43,6 +43,8 @@ export default class Game {
   private stats!: any;
   private clock!: THREE.Clock;
 
+  private sunDistance = 400;
+
   private sky!: THREE.Mesh<THREE.BufferGeometry, THREE.ShaderMaterial>;
   private sun!: THREE.DirectionalLight;
   private sunHelper!: THREE.DirectionalLightHelper;
@@ -65,9 +67,6 @@ export default class Game {
     this.initScene();
     this.initStats();
     this.initListeners();
-    // workerInstance.add(1, 2).then((result) => {
-    //   console.log(result);
-    // });
   }
 
   initStats() {
@@ -135,14 +134,16 @@ export default class Game {
     this.sun.shadow.camera.bottom = -80;
     this.sun.shadow.camera.near = 0.1;
     this.sun.shadow.camera.far = 600;
-    this.sun.shadow.bias = -0.001;
+    this.sun.shadow.bias = -0.005;
     this.sun.shadow.mapSize = new THREE.Vector2(512, 512);
+
     this.scene.add(this.sun);
     this.scene.add(this.sun.target);
     this.sunHelper = new THREE.DirectionalLightHelper(this.sun);
     this.scene.add(this.sunHelper);
 
     this.shadowHelper = new THREE.CameraHelper(this.sun.shadow.camera);
+    this.shadowHelper.visible = false;
     this.scene.add(this.shadowHelper);
 
     const ambient = new THREE.AmbientLight();
@@ -154,6 +155,14 @@ export default class Game {
 
     this.player = new Player(this.scene);
     this.physics = new Physics(this.scene);
+
+    const sunAngle = 0;
+    const sunX = this.sunDistance * Math.cos(sunAngle);
+    const sunY = this.sunDistance * Math.sin(sunAngle);
+    this.sun.position.set(sunX, sunY, this.player.camera.position.z); // Update the position of the sun
+    this.sun.position.add(this.player.camera.position);
+
+    this.sun.target.position.copy(this.player.camera.position);
 
     createUI(this.world, this.player, this.physics, this.scene);
 
@@ -269,11 +278,10 @@ export default class Game {
 
     if (performance.now() - this.lastShadowUpdate < 10000) return;
 
-    const sunDistance = 400; // Define the distance of the sun from the player
     const sunAngle =
       ((2 * Math.PI) / cycleDuration) * (cycleTime + cycleDuration / 6); // Calculate the angle of the sun based on the cycle time with a phase shift of T/4
-    const sunX = sunDistance * Math.cos(sunAngle); // Calculate the X position of the sun
-    const sunY = sunDistance * Math.sin(sunAngle); // Calculate the Y position of the sun
+    const sunX = this.sunDistance * Math.cos(sunAngle); // Calculate the X position of the sun
+    const sunY = this.sunDistance * Math.sin(sunAngle); // Calculate the Y position of the sun
     this.sun.position.set(sunX, sunY, this.player.camera.position.z); // Update the position of the sun
     this.sun.position.add(this.player.camera.position);
 

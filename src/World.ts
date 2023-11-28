@@ -10,12 +10,15 @@ import { WorldChunk, WorldParams, WorldSize } from "./WorldChunk";
 export class World extends THREE.Group {
   scene: THREE.Scene;
   seed: number;
-  renderDistance = 10;
+  renderDistance = 8;
   asyncLoading = true;
   chunkSize: WorldSize = {
     width: 16,
     height: 32,
   };
+  chunkQueue: { x: number; z: number }[];
+  minChunkLoadTimeout = 200;
+  lastChunkLoadTime = 0;
 
   params: WorldParams = {
     seed: 0,
@@ -56,12 +59,13 @@ export class World extends THREE.Group {
 
   // Used for persisting changes to the world
   dataStore = new DataStore();
-  pointLights = new THREE.Group();
+  pointLights = new Map<string, THREE.PointLight>();
 
   constructor(seed = 0, scene: THREE.Scene) {
     super();
     this.seed = seed;
     this.scene = scene;
+    this.chunkQueue = [];
   }
 
   /**
@@ -77,6 +81,10 @@ export class World extends THREE.Group {
     this.update(player);
   }
 
+  getBlockKey(x: number, y: number, z: number) {
+    return `${x},${y},${z}`;
+  }
+
   getChunkKey(x: number, z: number) {
     return `${x},${z}`;
   }
@@ -89,12 +97,42 @@ export class World extends THREE.Group {
     const chunksToAdd = this.getChunksToAdd(visibleChunks);
     this.removeUnusedChunks(visibleChunks);
 
+    const playerPos = this.worldToChunkCoords(
+      player.position.x,
+      player.position.y,
+      player.position.z
+    );
+
     if (chunksToAdd.length > 0) {
       console.log("Chunks to add", chunksToAdd);
+      this.chunkQueue = [...chunksToAdd, ...this.chunkQueue];
+
+      // trim duplicates from chunkQueue
+      const chunkQueueSet = new Set();
+      this.chunkQueue = this.chunkQueue.filter((chunk) => {
+        const key = this.getChunkKey(chunk.x, chunk.z);
+        const playerInRenderDistance =
+          Math.sqrt(
+            (playerPos.chunk.x - chunk.x) ** 2 +
+              (playerPos.chunk.z - chunk.z) ** 2
+          ) <= this.renderDistance;
+        if (chunkQueueSet.has(key) || !playerInRenderDistance) {
+          return false;
+        } else {
+          chunkQueueSet.add(key);
+          return true;
+        }
+      });
     }
 
-    for (const chunk of chunksToAdd) {
-      this.generateChunk(chunk.x, chunk.z);
+    // process top from chunk queue
+    if (this.chunkQueue.length) {
+      const chunk = this.chunkQueue.shift();
+      if (chunk) {
+        console.log("Generating chunk", chunk.x, chunk.z);
+        this.generateChunk(chunk.x, chunk.z);
+        this.lastChunkLoadTime = performance.now();
+      }
     }
   }
 
@@ -122,6 +160,18 @@ export class World extends THREE.Group {
         visibleChunks.push({ x: coords.chunk.x + dx, z: coords.chunk.z + dz });
       }
     }
+
+    // sort chunks by distance from player
+    visibleChunks.sort((a, b) => {
+      const distA = Math.sqrt(
+        (a.x - coords.chunk.x) ** 2 + (a.z - coords.chunk.z) ** 2
+      );
+      const distB = Math.sqrt(
+        (b.x - coords.chunk.x) ** 2 + (b.z - coords.chunk.z) ** 2
+      );
+
+      return distA - distB;
+    });
 
     return visibleChunks;
   }
@@ -177,7 +227,7 @@ export class World extends THREE.Group {
     chunk.position.set(x * this.chunkSize.width, 0, z * this.chunkSize.width);
     chunk.userData = { x, z };
 
-    chunk.generate();
+    await chunk.generate();
 
     this.add(chunk);
   }
@@ -203,7 +253,7 @@ export class World extends THREE.Group {
         );
         light.position.set(x + 0.5, y + 0.5, z + 0.5);
         light.castShadow = true;
-        console.log("Adding light", x, y, z);
+        this.pointLights.set(this.getBlockKey(x, y, z), light);
         this.scene.add(light);
       }
 
@@ -224,6 +274,13 @@ export class World extends THREE.Group {
     if (chunk && chunk.loaded) {
       console.log(`Removing block at ${x}, ${y}, ${z} for chunk ${chunk.uuid}`);
       chunk.removeBlock(coords.block.x, coords.block.y, coords.block.z);
+      if (this.pointLights.has(this.getBlockKey(x, y, z))) {
+        const light = this.pointLights.get(this.getBlockKey(x, y, z));
+        if (light) {
+          this.scene.remove(light);
+          this.pointLights.delete(this.getBlockKey(x, y, z));
+        }
+      }
 
       // Reveal any adjacent blocks that may have been exposed after the block at (x,y,z) was removed
       this.revealBlock(x - 1, y, z);

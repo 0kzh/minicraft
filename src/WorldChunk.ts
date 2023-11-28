@@ -77,26 +77,27 @@ export class WorldChunk extends THREE.Group {
     this.loaded = false;
   }
 
-  generate() {
+  async generate() {
     const start = performance.now();
 
-    // workerInstance
-    //   .generateChunk(this.size, this.params, this.x, this.z)
-    //   .then((data: BlockID[][][]) => {
-    //     console.log(`Loaded chunk in ${performance.now() - start}ms`);
-    //   });
-    workerInstance
-      .generateChunk(this.size, this.params, this.position.x, this.position.z)
-      .then((data: BlockID[][][]) => {
-        requestIdleCallback(() => {
-          this.initializeTerrain(data);
-          this.loadPlayerChanges();
-          this.generateMeshes(data);
-          this.loaded = true;
+    const data: BlockID[][][] = await workerInstance.generateChunk(
+      this.size,
+      this.params,
+      this.position.x,
+      this.position.z
+    );
 
-          console.log(`Loaded chunk in ${performance.now() - start}ms`);
-        });
-      });
+    requestIdleCallback(
+      () => {
+        this.initializeTerrain(data);
+        this.loadPlayerChanges();
+        this.generateMeshes(data);
+        this.loaded = true;
+
+        console.log(`Loaded chunk in ${performance.now() - start}ms`);
+      },
+      { timeout: 1000 }
+    );
   }
 
   /**
