@@ -169,7 +169,7 @@ export class WorldChunk extends THREE.Group {
 
       mesh.name = block.constructor.name;
       mesh.count = 0;
-      mesh.castShadow = true;
+      mesh.castShadow = !block.canPassThrough;
       mesh.receiveShadow = true;
       mesh.matrixAutoUpdate = false;
       meshes[block.id] = mesh;
@@ -310,7 +310,6 @@ export class WorldChunk extends THREE.Group {
           mesh.instanceMatrix.needsUpdate = true;
           mesh.computeBoundingSphere();
         } else if (blockClass.geometry == RenderGeometry.Cross) {
-          console.log(mesh);
           const instanceId1 = mesh.count++;
           const instanceId2 = mesh.count++;
           this.setBlockInstanceIds(x, y, z, [instanceId1, instanceId2]);

@@ -45,11 +45,14 @@ export default class Game {
 
   private sky!: THREE.Mesh<THREE.BufferGeometry, THREE.ShaderMaterial>;
   private sun!: THREE.DirectionalLight;
+  private sunHelper!: THREE.DirectionalLightHelper;
+  private shadowHelper!: THREE.CameraHelper;
   private world!: World;
   private player!: Player;
   private physics!: Physics;
 
   private previousTime = 0;
+  private lastShadowUpdate = 0;
 
   private dayColor = new THREE.Color(0xc0d8ff);
   private nightColor = new THREE.Color(0x10121e);
@@ -82,14 +85,12 @@ export default class Game {
     this.orbitCamera.position.set(-32, 64, -32);
 
     this.renderer = new THREE.WebGLRenderer();
-    this.renderer.shadowMap.enabled = false;
+    this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
     this.renderer.setPixelRatio(window.devicePixelRatio);
     this.renderer.setSize(window.innerWidth, window.innerHeight);
-    // this.renderer.setClearColor(0x80abfe);
-    //transparent
-    this.renderer.setClearColor(0x000000, 0);
+    this.renderer.setClearColor(0x80abfe);
 
     document.body.appendChild(this.renderer.domElement);
 
@@ -123,21 +124,26 @@ export default class Game {
     this.scene.fog.color.copy(uniforms.bottomColor.value);
 
     this.sun = new THREE.DirectionalLight();
+    // this.sun.position.set(50, 50, 50);
     this.sun.intensity = 1.5;
-    this.sun.position.set(50, 50, 50);
     this.sun.castShadow = true;
 
     // Set the size of the sun's shadow box
-    this.sun.shadow.camera.left = -40;
-    this.sun.shadow.camera.right = 40;
-    this.sun.shadow.camera.top = 40;
-    this.sun.shadow.camera.bottom = -40;
+    this.sun.shadow.camera.left = -80;
+    this.sun.shadow.camera.right = 80;
+    this.sun.shadow.camera.top = 80;
+    this.sun.shadow.camera.bottom = -80;
     this.sun.shadow.camera.near = 0.1;
-    this.sun.shadow.camera.far = 250;
-    this.sun.shadow.bias = -0.005;
+    this.sun.shadow.camera.far = 600;
+    this.sun.shadow.bias = -0.001;
     this.sun.shadow.mapSize = new THREE.Vector2(512, 512);
     this.scene.add(this.sun);
     this.scene.add(this.sun.target);
+    this.sunHelper = new THREE.DirectionalLightHelper(this.sun);
+    this.scene.add(this.sunHelper);
+
+    this.shadowHelper = new THREE.CameraHelper(this.sun.shadow.camera);
+    this.scene.add(this.shadowHelper);
 
     const ambient = new THREE.AmbientLight();
     ambient.intensity = 0.2;
@@ -192,7 +198,7 @@ export default class Game {
 
   updateSkyColor() {
     const elapsedTime = this.clock.getElapsedTime();
-    const cycleDuration = 24; // Duration of a day in seconds
+    const cycleDuration = 600; // Duration of a day in seconds
     const cycleTime = elapsedTime % cycleDuration;
 
     let topColor: THREE.Color;
@@ -260,6 +266,24 @@ export default class Game {
 
     // Desaturate the fog slightly
     this.scene.fog?.color.copy(topColor).multiplyScalar(0.2);
+
+    if (performance.now() - this.lastShadowUpdate < 10000) return;
+
+    const sunDistance = 400; // Define the distance of the sun from the player
+    const sunAngle =
+      ((2 * Math.PI) / cycleDuration) * (cycleTime + cycleDuration / 6); // Calculate the angle of the sun based on the cycle time with a phase shift of T/4
+    const sunX = sunDistance * Math.cos(sunAngle); // Calculate the X position of the sun
+    const sunY = sunDistance * Math.sin(sunAngle); // Calculate the Y position of the sun
+    this.sun.position.set(sunX, sunY, this.player.camera.position.z); // Update the position of the sun
+    this.sun.position.add(this.player.camera.position);
+
+    this.sun.target.position.copy(this.player.camera.position);
+    this.sun.target.updateMatrixWorld();
+
+    this.sunHelper.update();
+    this.shadowHelper.update();
+
+    this.lastShadowUpdate = performance.now();
   }
 
   draw() {

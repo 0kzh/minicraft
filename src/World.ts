@@ -202,6 +202,7 @@ export class World extends THREE.Group {
           blockClass.decay
         );
         light.position.set(x + 0.5, y + 0.5, z + 0.5);
+        light.castShadow = true;
         console.log("Adding light", x, y, z);
         this.scene.add(light);
       }
