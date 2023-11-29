@@ -3,7 +3,6 @@ import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import Stats from "three/examples/jsm/libs/stats.module";
 
-import audioManager from "./audio/AudioManager";
 import { createUI } from "./GUI";
 import { Physics } from "./Physics";
 import { Player } from "./Player";

@@ -1,5 +1,5 @@
 {
-    "src": ["sprite.webm", "sprite.mp3"],
+    "src": ["/audio/sprite.webm", "/audio/sprite.mp3"],
     "sprite": {
       "cave1": [0, 3501.6780045351475],
       "cave10": [4200, 2520.816326530612],

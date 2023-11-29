@@ -10,7 +10,7 @@ import { WorldChunk, WorldParams, WorldSize } from "./WorldChunk";
 export class World extends THREE.Group {
   scene: THREE.Scene;
   seed: number;
-  renderDistance = 2;
+  renderDistance = 8;
   asyncLoading = true;
   chunkSize: WorldSize = {
     width: 16,
@@ -98,7 +98,7 @@ export class World extends THREE.Group {
     this.removeUnusedChunks(visibleChunks);
 
     if (chunksToAdd.length > 0) {
-      console.log("Chunks to add", chunksToAdd);
+      // console.log("Chunks to add", chunksToAdd);
       this.chunkQueue = [...chunksToAdd, ...this.chunkQueue];
 
       // trim duplicates from chunkQueue

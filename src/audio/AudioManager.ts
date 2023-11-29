@@ -1,8 +1,8 @@
 import { Howl, Howler } from "howler";
 import { sample } from "lodash";
 
-import soundData from "../../public/audio/sounds.json";
-import spriteData from "../../public/audio/sprite.json";
+import soundData from "./sounds.json";
+import spriteData from "./sprite.json";
 
 // TODO: remove this, add volume slider
 Howler.volume(0.3);
@@ -16,7 +16,7 @@ class AudioManager {
 
   loadSounds() {
     return new Howl({
-      src: ["public/audio/sprite.webm", "public/audio/sprite.mp3"],
+      src: ["/audio/sprite.webm", "/audio/sprite.mp3"],
       sprite: spriteData.sprite as any,
     });
   }

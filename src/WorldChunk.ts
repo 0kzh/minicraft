@@ -371,7 +371,7 @@ export class WorldChunk extends THREE.Group {
     ) as THREE.InstancedMesh;
 
     // We can't remove instances directly, so we need to swap each with the last instance and decrement count by 1
-    block.instanceIds.forEach((instanceId, index) => {
+    block.instanceIds.forEach((instanceId) => {
       const lastMatrix = new THREE.Matrix4();
       mesh.getMatrixAt(mesh.count - 1, lastMatrix);
 
@@ -382,7 +382,7 @@ export class WorldChunk extends THREE.Group {
         Math.floor(lastBlockCoords.x),
         Math.floor(lastBlockCoords.y),
         Math.floor(lastBlockCoords.z),
-        [block.instanceIds[index]]
+        [instanceId]
       );
 
       // Swap transformation matrices
@@ -390,11 +390,11 @@ export class WorldChunk extends THREE.Group {
 
       // Decrement instance count
       mesh.count--;
-    });
 
-    // Notify the instanced mesh we updated the instance matrix
-    mesh.instanceMatrix.needsUpdate = true;
-    mesh.computeBoundingSphere();
+      // Notify the instanced mesh we updated the instance matrix
+      mesh.instanceMatrix.needsUpdate = true;
+      mesh.computeBoundingSphere();
+    });
 
     this.setBlockInstanceIds(x, y, z, []);
   }
