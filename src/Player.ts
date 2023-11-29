@@ -199,6 +199,16 @@ export class Player {
     this.updateRaycaster(world);
     this.updateToolbar();
     this.updateCameraFOV();
+
+    // prevent player from falling through
+    if (this.position.y < 0) {
+      this.position.set(
+        this.initialPosition.x,
+        this.initialPosition.y,
+        this.initialPosition.z
+      );
+      this.velocity.set(0, 0, 0);
+    }
   }
 
   /**
