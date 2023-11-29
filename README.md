@@ -57,3 +57,12 @@ https://github.com/0kzh/minicraft/assets/9621004/1b5432d7-dc20-4147-b8db-5fa180d
 
 **Render fog**
 ![Render fog](https://github.com/0kzh/minicraft/assets/9621004/6cea76fe-8b29-4738-aa2a-3df59c70f06f)
+
+### License
+This project is licensed under the MIT License.
+
+### Sources
+- [Reinventing Minecraft world generation by Henrik Kniberg](https://www.youtube.com/watch?v=ob3VwY4JyzE)
+- [Tutorials by Coffee Code Create](https://www.youtube.com/playlist?list=PLtzt35QOXmkKALLv9RzT8oGwN5qwmRjTo)
+- [How Minecraft Actually Works by Alan Zucconi](https://www.youtube.com/watch?v=YyVAaJqYAfE)
+- [Three.js Journey by Bruno Simon](https://threejs-journey.com)
