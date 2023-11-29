@@ -216,6 +216,11 @@ export class Physics {
       }
       player.position.add(deltaPosition);
 
+      // If player is stuck underneath a block, boost him up
+      if (collision.normal.y < 0) {
+        player.velocity.y += 10;
+      }
+
       // Get the magnitude of player's velocity along collision normal
       const magnitude = player.worldVelocity.dot(collision.normal);
       // remove that part of velocity from the player's velocity
