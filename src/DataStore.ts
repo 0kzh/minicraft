@@ -31,7 +31,7 @@ export class DataStore {
   ) {
     const key = this.#getKey(chunkX, chunkZ, blockX, blockY, blockZ);
     const blockId = this.data[key];
-    console.log(`getting value ${blockId} at key ${key}`);
+    // console.log(`getting value ${blockId} at key ${key}`);
     return blockId;
   }
 
@@ -44,7 +44,7 @@ export class DataStore {
     value: BlockID
   ) {
     const key = this.#getKey(chunkX, chunkZ, blockX, blockY, blockZ);
-    console.log(`setting value ${value} at key ${key}`);
+    // console.log(`setting value ${value} at key ${key}`);
     this.data[key] = value;
   }
 

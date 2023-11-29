@@ -27,6 +27,7 @@ export const textures = {
   flowerRose: loadTexture("textures/flower_rose.png"),
   flowerDandelion: loadTexture("textures/flower_dandelion.png"),
   redstoneLamp: loadTexture("textures/redstone_lamp.png"),
+  stoneBrick: loadTexture("textures/stonebrick.png"),
 };
 
 export const uiTextures = {
@@ -42,4 +43,5 @@ export const uiTextures = {
   flowerRose: "textures/flower_rose.png",
   flowerDandelion: "textures/flower_dandelion.png",
   redstoneLamp: "textures/redstone_lamp_block.png",
+  stoneBrick: "textures/stonebrick_block.png",
 };

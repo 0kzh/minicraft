@@ -100,12 +100,12 @@ export class Player {
     BlockID.Grass,
     BlockID.Dirt,
     BlockID.Stone,
+    BlockID.StoneBrick,
+    BlockID.RedstoneLamp,
     BlockID.CoalOre,
     BlockID.IronOre,
     BlockID.OakLog,
     BlockID.Leaves,
-    BlockID.TallGrass,
-    BlockID.RedstoneLamp,
   ];
   activeToolbarIndex = 0;
 

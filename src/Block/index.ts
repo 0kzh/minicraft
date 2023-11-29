@@ -12,6 +12,7 @@ export enum BlockID {
   FlowerRose = 10,
   FlowerDandelion = 11,
   RedstoneLamp = 12,
+  StoneBrick = 13,
 }
 
 export const oreConfig = {
@@ -41,4 +42,5 @@ export const blockIdToKey = {
   [BlockID.FlowerRose]: "flower_rose",
   [BlockID.FlowerDandelion]: "flower_dandelion",
   [BlockID.RedstoneLamp]: "redstone_lamp",
+  [BlockID.StoneBrick]: "stone_brick",
 };

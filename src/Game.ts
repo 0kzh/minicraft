@@ -219,12 +219,25 @@ export default class Game {
           Math.ceil(this.player.selectedCoords.z - 0.5)
         );
       } else if (event.button === 2 && this.player.blockPlacementCoords) {
-        console.log("adding block", this.player.activeBlockId);
+        // console.log("adding block", this.player.activeBlockId);
         if (this.player.activeBlockId != null) {
+          const playerPos = new THREE.Vector3(
+            Math.floor(this.player.position.x),
+            Math.floor(this.player.position.y) - 1,
+            Math.floor(this.player.position.z)
+          );
+          const blockPos = new THREE.Vector3(
+            Math.floor(this.player.blockPlacementCoords.x - 0.5),
+            Math.floor(this.player.blockPlacementCoords.y - 0.5),
+            Math.floor(this.player.blockPlacementCoords.z - 0.5)
+          );
+
+          if (playerPos.distanceTo(blockPos) <= this.player.radius * 2) return;
+
           this.world.addBlock(
-            Math.ceil(this.player.blockPlacementCoords.x - 0.5),
-            Math.ceil(this.player.blockPlacementCoords.y - 0.5),
-            Math.ceil(this.player.blockPlacementCoords.z - 0.5),
+            blockPos.x,
+            blockPos.y,
+            blockPos.z,
             this.player.activeBlockId
           );
         }

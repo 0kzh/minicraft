@@ -11,6 +11,7 @@ import { LeavesBlock } from "./LeavesBlock";
 import { OakLogBlock } from "./OakLogBlock";
 import { RedstoneLampBlock } from "./RedstoneLampBlock";
 import { StoneBlock } from "./StoneBlock";
+import { StoneBrickBlock } from "./StoneBrickBlock";
 import { TallGrassBlock } from "./TallGrassBlock";
 
 import { BlockID } from ".";
@@ -31,6 +32,7 @@ export class BlockFactory {
     [BlockID.FlowerRose]: FlowerRoseBlock,
     [BlockID.FlowerDandelion]: FlowerDandelionBlock,
     [BlockID.RedstoneLamp]: RedstoneLampBlock,
+    [BlockID.StoneBrick]: StoneBrickBlock,
   };
 
   private static blockInstances: { [id: number]: Block } = {};

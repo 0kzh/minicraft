@@ -140,7 +140,7 @@ export class WorldChunk extends THREE.Group {
               y,
               z
             );
-            console.log(`Overwriting block at ${x}, ${y}, ${z} to ${blockId}`);
+            // console.log(`Overwriting block at ${x}, ${y}, ${z} to ${blockId}`);
             this.setBlockId(x, y, z, blockId);
           }
         }
@@ -267,7 +267,7 @@ export class WorldChunk extends THREE.Group {
    * Removes the block at (x, y, z)
    */
   removeBlock(x: number, y: number, z: number) {
-    console.log(`Removing block at ${x}, ${y}, ${z}`);
+    // console.log(`Removing block at ${x}, ${y}, ${z}`);
     const block = this.getBlock(x, y, z);
     if (block && block.block !== BlockID.Air) {
       this.playBlockSound(block.block);

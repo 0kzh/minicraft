@@ -23,7 +23,7 @@ class AudioManager {
 
   play(name: string) {
     if (!(name in soundData)) {
-      console.log(`Unknown sound: ${name}`);
+      console.error(`Unknown sound: ${name}`);
       return;
     }
 

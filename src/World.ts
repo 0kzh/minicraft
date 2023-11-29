@@ -124,7 +124,7 @@ export class World extends THREE.Group {
         // this.lastChunkLoadTime = performance.now();
       }
     } else {
-      console.log("Chunk queue empty");
+      // console.log("Chunk queue empty");
       if (!this.initialLoadComplete) {
         this.initialLoadComplete = true;
         const menuScreen = document.getElementById("menu");
@@ -135,7 +135,11 @@ export class World extends THREE.Group {
             debugMenu.style.display = "flex";
           }
 
-          const startingPlayerPosition = player.initialPosition;
+          const startingPlayerPosition = new THREE.Vector3(
+            player.initialPosition.x,
+            player.initialPosition.y,
+            player.initialPosition.z
+          );
           for (let y = this.chunkSize.height; y > 0; y--) {
             if (
               this.getBlock(
@@ -151,7 +155,7 @@ export class World extends THREE.Group {
 
           player.position.set(
             startingPlayerPosition.x,
-            startingPlayerPosition.y + 3,
+            startingPlayerPosition.y + 10,
             startingPlayerPosition.z
           );
           player.controls.lock();
@@ -313,9 +317,15 @@ export class World extends THREE.Group {
   removeBlock(x: number, y: number, z: number) {
     const coords = this.worldToChunkCoords(x, y, z);
     const chunk = this.getChunk(coords.chunk.x, coords.chunk.z);
+    const blockToRemove = this.getBlock(x, y, z);
+
+    if (blockToRemove?.block === BlockID.Bedrock) {
+      return;
+    }
 
     if (chunk && chunk.loaded) {
-      console.log(`Removing block at ${x}, ${y}, ${z} for chunk ${chunk.uuid}`);
+      // console.log(`Removing block at ${x}, ${y}, ${z} for chunk ${chunk.uuid}`);
+
       chunk.removeBlock(coords.block.x, coords.block.y, coords.block.z);
       if (this.pointLights.has(this.getBlockKey(x, y, z))) {
         const light = this.pointLights.get(this.getBlockKey(x, y, z));
@@ -395,7 +405,7 @@ export class World extends THREE.Group {
    * Reveals block at (x, y, z) by adding new mesh instance
    */
   revealBlock(x: number, y: number, z: number) {
-    console.log(`Revealing block at ${x}, ${y}, ${z}`);
+    // console.log(`Revealing block at ${x}, ${y}, ${z}`);
     const coords = this.worldToChunkCoords(x, y, z);
     const chunk = this.getChunk(coords.chunk.x, coords.chunk.z);
 
@@ -416,7 +426,7 @@ export class World extends THREE.Group {
       chunk.loaded &&
       chunk.isBlockObscured(coords.block.x, coords.block.y, coords.block.z)
     ) {
-      console.log(`Hiding block at ${x}, ${y}, ${z}`);
+      // console.log(`Hiding block at ${x}, ${y}, ${z}`);
       chunk.deleteBlockInstance(coords.block.x, coords.block.y, coords.block.z);
     }
   }
