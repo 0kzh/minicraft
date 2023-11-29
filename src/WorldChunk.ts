@@ -79,7 +79,7 @@ export class WorldChunk extends THREE.Group {
   }
 
   async generate() {
-    const start = performance.now();
+    // const start = performance.now();
 
     const data: BlockID[][][] = await workerInstance.generateChunk(
       this.size,
@@ -95,7 +95,7 @@ export class WorldChunk extends THREE.Group {
         this.generateMeshes(data);
         this.loaded = true;
 
-        console.log(`Loaded chunk in ${performance.now() - start}ms`);
+        // console.log(`Loaded chunk in ${performance.now() - start}ms`);
       },
       { timeout: 1000 }
     );
@@ -321,6 +321,7 @@ export class WorldChunk extends THREE.Group {
       ) as THREE.InstancedMesh;
 
       if (mesh) {
+        this.playBlockSound(block.block);
         if (blockClass.geometry == RenderGeometry.Cube) {
           const instanceId = mesh.count++;
           this.setBlockInstanceIds(x, y, z, [instanceId]);

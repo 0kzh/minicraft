@@ -1,8 +1,10 @@
 import TWEEN from "@tweenjs/tween.js";
+import { Howl, Howler } from "howler";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import Stats from "three/examples/jsm/libs/stats.module";
 
+import audioManager from "./audio/AudioManager";
 import { createUI } from "./GUI";
 import { Physics } from "./Physics";
 import { Player } from "./Player";
@@ -43,7 +45,10 @@ export default class Game {
   private stats!: any;
   private clock!: THREE.Clock;
 
-  private sunDistance = 400;
+  private sunSettings = {
+    distance: 400,
+    cycleLength: 600,
+  };
 
   private sky!: THREE.Mesh<THREE.BufferGeometry, THREE.ShaderMaterial>;
   private sun!: THREE.DirectionalLight;
@@ -63,11 +68,35 @@ export default class Game {
   constructor() {
     this.previousTime = performance.now();
     this.clock = new THREE.Clock();
+    this.initMainMenu();
+  }
 
-    this.initScene();
-    this.initStats();
-    this.initListeners();
-    this.initAudio();
+  initMainMenu() {
+    const mainMenu = document.getElementById("main-menu");
+    const loadingScreen = document.getElementById("loading");
+    const startGameButton = document.getElementById("start-game");
+    startGameButton?.addEventListener("click", () => {
+      if (mainMenu) mainMenu.style.display = "none";
+      if (loadingScreen) loadingScreen.style.display = "block";
+      audioManager.play("gui.button.press");
+
+      this.initScene();
+      this.initStats();
+      this.initListeners();
+      this.initAudio();
+    });
+
+    const githubButton = document.getElementById("github");
+    githubButton?.addEventListener("click", () => {
+      audioManager.play("gui.button.press");
+      window.open("https://github.com/0kzh/minicraft");
+    });
+
+    const websiteButton = document.getElementById("website");
+    websiteButton?.addEventListener("click", () => {
+      audioManager.play("gui.button.press");
+      window.open("https://kelvinzhang.com");
+    });
   }
 
   initStats() {
@@ -160,24 +189,24 @@ export default class Game {
 
     this.updateSunPosition(0);
 
-    createUI(this.world, this.player, this.physics, this.scene);
+    createUI(
+      this.world,
+      this.player,
+      this.physics,
+      this.scene,
+      this.renderer,
+      this.sunSettings
+    );
 
     this.draw();
   }
 
   initAudio() {
-    const listener = new THREE.AudioListener();
-    this.player.camera.add(listener);
-
-    const sound = new THREE.Audio(listener);
-
-    const audioLoader = new THREE.AudioLoader();
-    audioLoader.load("audio/ambient.mp3", function (buffer) {
-      sound.setBuffer(buffer);
-      sound.setLoop(true);
-      sound.setVolume(0.5);
-      sound.play();
+    const sound = new Howl({
+      src: ["audio/ambient.mp3"],
+      loop: true,
     });
+    sound.play();
   }
 
   onMouseDown(event: MouseEvent) {
@@ -218,7 +247,7 @@ export default class Game {
 
   updateSkyColor() {
     const elapsedTime = this.clock.getElapsedTime();
-    const cycleDuration = 600; // Duration of a day in seconds
+    const cycleDuration = this.sunSettings.cycleLength; // Duration of a day in seconds
     const cycleTime = elapsedTime % cycleDuration;
 
     let topColor: THREE.Color;
@@ -287,7 +316,11 @@ export default class Game {
     // Desaturate the fog slightly
     this.scene.fog?.color.copy(topColor).multiplyScalar(0.2);
 
-    if (performance.now() - this.lastShadowUpdate < 10000) return;
+    if (
+      performance.now() - this.lastShadowUpdate <
+      this.sunSettings.cycleLength
+    )
+      return;
 
     const sunAngle =
       ((2 * Math.PI) / cycleDuration) * (cycleTime + cycleDuration / 6); // Calculate the angle of the sun based on the cycle time with a phase shift of T/4
@@ -297,8 +330,8 @@ export default class Game {
   }
 
   updateSunPosition(angle: number) {
-    const sunX = this.sunDistance * Math.cos(angle); // Calculate the X position of the sun
-    const sunY = this.sunDistance * Math.sin(angle); // Calculate the Y position of the sun
+    const sunX = this.sunSettings.distance * Math.cos(angle); // Calculate the X position of the sun
+    const sunY = this.sunSettings.distance * Math.sin(angle); // Calculate the Y position of the sun
     this.sun.position.set(sunX, sunY, this.player.camera.position.z); // Update the position of the sun
     this.sun.position.add(this.player.camera.position);
 
@@ -337,10 +370,10 @@ export default class Game {
       )}`;
     }
 
-    if (this.controls) {
-      this.controls.autoRotate = false;
-      this.controls.autoRotateSpeed = 2.0;
-    }
+    // if (this.controls) {
+    //   this.controls.autoRotate = false;
+    //   this.controls.autoRotateSpeed = 2.0;
+    // }
 
     if (this.stats) this.stats.update();
 

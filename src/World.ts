@@ -17,8 +17,9 @@ export class World extends THREE.Group {
     height: 32,
   };
   chunkQueue: { x: number; z: number }[];
-  minChunkLoadTimeout = 200;
-  lastChunkLoadTime = 0;
+  initialLoadComplete = false;
+  // minChunkLoadTimeout = 200;
+  // lastChunkLoadTime = 0;
 
   params: WorldParams = {
     seed: 0,
@@ -118,13 +119,64 @@ export class World extends THREE.Group {
     if (this.chunkQueue.length) {
       const chunk = this.chunkQueue.shift();
       if (chunk) {
-        console.log("Generating chunk", chunk.x, chunk.z);
+        // console.log("Generating chunk", chunk.x, chunk.z);
         this.generateChunk(chunk.x, chunk.z);
-        this.lastChunkLoadTime = performance.now();
+        // this.lastChunkLoadTime = performance.now();
       }
     } else {
       console.log("Chunk queue empty");
+      if (!this.initialLoadComplete) {
+        this.initialLoadComplete = true;
+        const menuScreen = document.getElementById("menu");
+        const debugMenu = document.getElementById("debug");
+        if (menuScreen) {
+          menuScreen.style.display = "none";
+          if (debugMenu) {
+            debugMenu.style.display = "flex";
+          }
+
+          const startingPlayerPosition = player.initialPosition;
+          for (let y = this.chunkSize.height; y > 0; y--) {
+            if (
+              this.getBlock(
+                startingPlayerPosition.x,
+                y,
+                startingPlayerPosition.z
+              )?.block === BlockID.Grass
+            ) {
+              startingPlayerPosition.y = y;
+              break;
+            }
+          }
+
+          player.position.set(
+            startingPlayerPosition.x,
+            startingPlayerPosition.y + 3,
+            startingPlayerPosition.z
+          );
+          player.controls.lock();
+        }
+      }
     }
+
+    if (!this.initialLoadComplete) {
+      const totalChunks = (this.renderDistance * 2 + 1) ** 2;
+      const loadedChunks = this.children.length;
+      const percentLoaded = Math.round((loadedChunks / totalChunks) * 100);
+
+      const progressBar = document.getElementById("loading-progress-bar");
+      if (progressBar) {
+        progressBar.style.width = `${percentLoaded}%`;
+      }
+    }
+  }
+
+  getBlockUnderneath(position: THREE.Vector3, playerHeight: number) {
+    return this.getBlock(
+      Math.floor(position.x),
+      Math.floor(position.y - playerHeight / 2 - 1),
+      Math.floor(position.z)
+    );
   }
 
   /**
@@ -204,9 +256,9 @@ export class World extends THREE.Group {
       }
 
       this.remove(chunk);
-      console.log(
-        `Removed chunk at X: ${chunk.userData.x} Z: ${chunk.userData.z}`
-      );
+      // console.log(
+      //   `Removed chunk at X: ${chunk.userData.x} Z: ${chunk.userData.z}`
+      // );
     });
   }
 
@@ -218,7 +270,7 @@ export class World extends THREE.Group {
     chunk.position.set(x * this.chunkSize.width, 0, z * this.chunkSize.width);
     chunk.userData = { x, z };
 
-    await chunk.generate();
+    chunk.generate();
 
     this.add(chunk);
   }
@@ -280,6 +332,16 @@ export class World extends THREE.Group {
       this.revealBlock(x, y + 1, z);
       this.revealBlock(x, y, z - 1);
       this.revealBlock(x, y, z + 1);
+
+      // if above block is passthrough, remove it as well
+      const aboveBlock = this.getBlock(x, y + 1, z);
+      if (
+        aboveBlock &&
+        BlockFactory.getBlock(aboveBlock.block).canPassThrough &&
+        aboveBlock.block !== BlockID.Air
+      ) {
+        this.removeBlock(x, y + 1, z);
+      }
     }
   }
 

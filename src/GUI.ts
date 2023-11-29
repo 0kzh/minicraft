@@ -9,9 +9,20 @@ export function createUI(
   world: World,
   player: Player,
   physics: Physics,
-  scene: THREE.Scene
+  scene: THREE.Scene,
+  renderer: THREE.WebGLRenderer,
+  sunSettings: { distance: number; cycleLength: number }
 ) {
   const gui = new GUI();
+  const custom = { volume: 0.3 };
+
+  const soundFolder = gui.addFolder("Sound");
+  soundFolder
+    .add(custom, "volume", 0, 1, 0.01)
+    .name("Volume")
+    .onChange((value: number) => {
+      Howler.volume(value);
+    });
 
   const playerFolder = gui.addFolder("Player");
   playerFolder.add(player, "maxSpeed", 1, 50, 1).name("Max Speed");
@@ -26,6 +37,10 @@ export function createUI(
     .name("Simulation Rate");
 
   const worldFolder = gui.addFolder("World");
+  worldFolder.add(renderer.shadowMap, "enabled").name("Enable Shadows");
+  worldFolder
+    .add(sunSettings, "cycleLength", 0, 1000, 1)
+    .name("Day Length (s)");
   worldFolder.add(world, "renderDistance", 1, 16, 1).name("Render Distance");
   if (scene.fog) {
     worldFolder.add(scene.fog, "near", 1, 200, 1).name("Fog Near");

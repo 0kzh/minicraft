@@ -63,6 +63,8 @@ export class Player {
   velocity = new THREE.Vector3();
   #worldVelocity = new THREE.Vector3();
 
+  initialPosition = new THREE.Vector3(32, 72, 32);
+
   spacePressed = false;
   wKeyPressed = false;
   lastWPressed = 0;
@@ -108,8 +110,11 @@ export class Player {
   activeToolbarIndex = 0;
 
   constructor(scene: THREE.Scene) {
-    this.camera.position.set(32, 20, 32);
-    this.controls.lock();
+    this.camera.position.set(
+      this.initialPosition.x,
+      this.initialPosition.y,
+      this.initialPosition.z
+    );
     this.boundsHelper.visible = false;
     this.cameraHelper.visible = false;
     this.selectionHelper.visible = false;
@@ -118,41 +123,41 @@ export class Player {
     scene.add(this.boundsHelper);
     scene.add(this.selectionHelper);
 
+    setTimeout(() => {
+      this.controls.lock();
+    }, 2000);
+
     document.addEventListener("keydown", this.onKeyDown.bind(this));
     document.addEventListener("keyup", this.onKeyUp.bind(this));
   }
 
   applyInputs(dt: number, blockUnderneath: BlockID) {
-    if (this.controls.isLocked) {
-      // Normalize the input vector if more than one key is pressed
-      if (this.input.length() > 1) {
-        this.input
-          .normalize()
-          .multiplyScalar(
-            this.isSprinting ? this.maxSprintSpeed : this.maxSpeed
-          );
-      }
-
-      this.velocity.x = this.input.x;
-      this.velocity.z = this.input.z;
-
-      // play step sound
-      if (this.onGround && this.input.length() > 0) {
-        const minTimeout = this.isSprinting ? 300 : 400;
-        if (performance.now() - this.lastStepSoundPlayed > minTimeout) {
-          this.playWalkSound(blockUnderneath);
-          this.lastStepSoundPlayed = performance.now();
-        }
-      }
-
-      if (this.spacePressed && this.onGround) {
-        this.velocity.y = this.jumpSpeed;
-      }
-
-      this.controls.moveRight(this.velocity.x * dt);
-      this.controls.moveForward(this.velocity.z * dt);
-      this.position.y += this.velocity.y * dt;
+    // Normalize the input vector if more than one key is pressed
+    if (this.input.length() > 1) {
+      this.input
+        .normalize()
+        .multiplyScalar(this.isSprinting ? this.maxSprintSpeed : this.maxSpeed);
     }
+
+    this.velocity.x = this.input.x;
+    this.velocity.z = this.input.z;
+
+    // play step sound
+    if (this.onGround && this.input.length() > 0) {
+      const minTimeout = this.isSprinting ? 300 : 400;
+      if (performance.now() - this.lastStepSoundPlayed > minTimeout) {
+        this.playWalkSound(blockUnderneath);
+        this.lastStepSoundPlayed = performance.now();
+      }
+    }
+
+    if (this.spacePressed && this.onGround) {
+      this.velocity.y = this.jumpSpeed;
+    }
+
+    this.controls.moveRight(this.velocity.x * dt);
+    this.controls.moveForward(this.velocity.z * dt);
+    this.position.y += this.velocity.y * dt;
 
     const posX = document.getElementById("player-pos-x");
     if (posX) {
@@ -357,7 +362,11 @@ export class Player {
         this.input.x = this.maxSpeed;
         break;
       case "KeyR":
-        this.position.set(32, 20, 32);
+        this.position.set(
+          this.initialPosition.x,
+          this.initialPosition.y,
+          this.initialPosition.z
+        );
         this.velocity.set(0, 0, 0);
         break;
       case "Space":
