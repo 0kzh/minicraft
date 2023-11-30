@@ -195,7 +195,9 @@ export default class Game {
       this.physics,
       this.scene,
       this.renderer,
-      this.sunSettings
+      this.sunSettings,
+      this.sunHelper,
+      this.shadowHelper
     );
 
     this.draw();

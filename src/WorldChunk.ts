@@ -1,16 +1,9 @@
-import { wrap } from "comlink";
 import * as THREE from "three";
 
 import audioManager from "./audio/AudioManager";
 import { BlockID } from "./Block";
 import { RenderGeometry } from "./Block/Block";
 import { BlockFactory } from "./Block/BlockFactory";
-
-// export const workerInstance = new ComlinkWorker<typeof import("./chunkWorker")>(
-//   new URL("./chunkWorker", import.meta.url)
-// );
-
-import chunkWorker from "./chunkWorker?worker&url";
 import { DataStore } from "./DataStore";
 
 const geometry = new THREE.BoxGeometry();
@@ -107,7 +100,7 @@ export class WorldChunk extends THREE.Group {
   initializeTerrain(data: BlockID[][][]) {
     this.data = [];
     for (let x = 0; x < this.size.width; x++) {
-      const slice = [];
+      const slice: InstanceData[][] = [];
       for (let y = 0; y < this.size.height; y++) {
         const row: InstanceData[] = [];
         for (let z = 0; z < this.size.width; z++) {
@@ -177,7 +170,6 @@ export class WorldChunk extends THREE.Group {
       meshes[block.id] = mesh;
     }
 
-    const matrix = new THREE.Matrix4();
     for (let x = 0; x < this.size.width; x++) {
       for (let y = 0; y < this.size.height; y++) {
         for (let z = 0; z < this.size.width; z++) {

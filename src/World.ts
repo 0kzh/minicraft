@@ -195,7 +195,7 @@ export class World extends THREE.Group {
       player.position.z
     );
 
-    const visibleChunks = [];
+    const visibleChunks: { x: number; z: number }[] = [];
     const range = Array.from(
       { length: this.renderDistance * 2 + 1 },
       (_, i) => i - this.renderDistance

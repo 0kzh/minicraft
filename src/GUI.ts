@@ -11,7 +11,9 @@ export function createUI(
   physics: Physics,
   scene: THREE.Scene,
   renderer: THREE.WebGLRenderer,
-  sunSettings: { distance: number; cycleLength: number }
+  sunSettings: { distance: number; cycleLength: number },
+  sunHelper: THREE.DirectionalLightHelper,
+  shadowHelper: THREE.CameraHelper
 ) {
   const gui = new GUI();
   const custom = { volume: 0.3 };
@@ -38,6 +40,8 @@ export function createUI(
 
   const worldFolder = gui.addFolder("World");
   worldFolder.add(renderer.shadowMap, "enabled").name("Enable Shadows");
+  worldFolder.add(sunHelper, "visible").name("Show Sun Helper");
+  worldFolder.add(shadowHelper, "visible").name("Show Shadow Helper");
   worldFolder
     .add(sunSettings, "cycleLength", 0, 1000, 1)
     .name("Day Length (s)");
@@ -47,8 +51,16 @@ export function createUI(
     worldFolder.add(scene.fog, "far", 1, 200, 1).name("Fog Far");
   }
 
-  const treesFolder = worldFolder.addFolder("Trees");
-  treesFolder.add(world.params.trees, "frequency", 0, 0.1).name("Frequency");
+  const terrainFolder = gui.addFolder("Terrain");
+  terrainFolder.add(world.chunkSize, "width", 8, 128, 1).name("Width");
+  terrainFolder.add(world.chunkSize, "height", 8, 64, 1).name("Height");
+  terrainFolder.add(world.params, "seed", 1, 10000, 1).name("Seed");
+  terrainFolder.add(world.params.terrain, "scale", 10, 100, 1).name("Scale");
+  terrainFolder.add(world.params.terrain, "magnitude", 0, 1).name("Magnitude");
+  terrainFolder.add(world.params.terrain, "offset", 0, 1).name("Offset");
+
+  const treesFolder = terrainFolder.addFolder("Trees");
+  treesFolder.add(world.params.trees, "frequency", 0, 1, 0.1).name("Frequency");
   treesFolder
     .add(world.params.trees.trunkHeight, "min", 0, 10, 1)
     .name("Min Trunk Height");
@@ -62,13 +74,15 @@ export function createUI(
     .add(world.params.trees.canopy.size, "max", 0, 10, 1)
     .name("Max Canopy Size");
 
-  const terrainFolder = gui.addFolder("Terrain");
-  terrainFolder.add(world.chunkSize, "width", 8, 128, 1).name("Width");
-  terrainFolder.add(world.chunkSize, "height", 8, 64, 1).name("Height");
-  terrainFolder.add(world.params, "seed", 1, 10000, 1).name("Seed");
-  terrainFolder.add(world.params.terrain, "scale", 10, 100, 1).name("Scale");
-  terrainFolder.add(world.params.terrain, "magnitude", 0, 1).name("Magnitude");
-  terrainFolder.add(world.params.terrain, "offset", 0, 1).name("Offset");
+  const grassFolder = terrainFolder.addFolder("Grass");
+  grassFolder.add(world.params.grass, "frequency", 0, 1, 0.1).name("Frequency");
+  grassFolder
+    .add(world.params.grass, "patchSize", 1, 10, 1)
+    .name("Grass Patch Size");
+
+  terrainFolder
+    .add(world.params.flowers, "frequency", 0, 1, 0.1)
+    .name("Frequency");
 
   const resourcesFolder = gui.addFolder("Resources");
 
