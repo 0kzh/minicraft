@@ -58,6 +58,27 @@ https://github.com/0kzh/minicraft/assets/9621004/1b5432d7-dc20-4147-b8db-5fa180d
 **Render fog**
 ![Render fog](https://github.com/0kzh/minicraft/assets/9621004/6cea76fe-8b29-4738-aa2a-3df59c70f06f)
 
+### Objectives
+1. Voxel Rendering System: Implement a voxel rendering system for a 3D matrix of blocks, each with unique properties like texture and translucency, and create a data structure and functions for rendering each voxel.
+
+2. Texture Mapping: Develop a texture mapping system to apply image textures to block faces, with support for transparency in textures for blocks such as leaves, grass, and water.
+
+3. Procedural Terrain Generation: Generate an infinite world using noise functions, rendering it in 16x16 chunks, with dynamic loading/unloading of chunks as the player moves, and adding fog for depth illusion. Ensure generated structures like trees render seamlessly between chunks.
+
+4. Performance Optimizations: Implement at least three optimizations for smooth browser gameplay
+
+5. Block Shading: Shade blocks based on their orientation relative to a simulated sunlight source.
+
+6. Player Physics and Collision Detection: Develop a simple physics engine for realistic player movement, including walking, jumping, and gravity, along with efficient collision detection to prevent passing through objects.
+
+7. Interactive Block Mechanics: Implement mechanics to allow players to break and place blocks, using raycasting for block detection, highlighting, and enabling block removal or placement.
+
+8. Skydome: Create a skydome encompassing the play area, with a dynamic day-night cycle that affects the world's lighting conditions, featuring transitions between dawn, daylight, dusk, and night.
+
+9. Procedural Generation of Environmental Structures: Algorithmically generate and place natural structures like trees and flowers, ensuring logical placement and natural patterns without unnatural overlaps.
+
+10. Lighting: Enhance the lighting engine to support day/night cycle effects and additional placeable light blocks which will influence the visibility and shading of nearby objects.
+
 ### License
 This project is licensed under the MIT License.
 
