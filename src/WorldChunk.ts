@@ -62,13 +62,20 @@ export class WorldChunk extends THREE.Group {
   size: WorldSize;
   loaded: boolean;
   dataStore: DataStore;
+  wireframeMode = false;
 
-  constructor(size: WorldSize, params: WorldParams, dataStore: DataStore) {
+  constructor(
+    size: WorldSize,
+    params: WorldParams,
+    dataStore: DataStore,
+    wireframeMode = false
+  ) {
     super();
     this.size = size;
     this.params = params;
     this.dataStore = dataStore;
     this.loaded = false;
+    this.wireframeMode = wireframeMode;
   }
 
   async generate() {
@@ -158,7 +165,9 @@ export class WorldChunk extends THREE.Group {
 
       const mesh = new THREE.InstancedMesh(
         blockGeometry === RenderGeometry.Cube ? geometry : crossGeometry,
-        block.material,
+        this.wireframeMode
+          ? new THREE.MeshBasicMaterial({ wireframe: true })
+          : block.material,
         maxCount
       );
 

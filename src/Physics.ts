@@ -1,7 +1,6 @@
 import * as THREE from "three";
 
 import { BlockID } from "./Block";
-import { Block } from "./Block/Block";
 import { BlockFactory } from "./Block/BlockFactory";
 import { Player } from "./Player";
 import { World } from "./World";
@@ -87,7 +86,7 @@ export class Physics {
   }
 
   broadPhase(player: Player, world: World): Candidate[] {
-    const candidates = [];
+    const candidates: Candidate[] = [];
 
     // Get the block extents of the player
     const minX = Math.floor(player.position.x - player.radius);
@@ -128,7 +127,7 @@ export class Physics {
   }
 
   narrowPhase(candidates: Candidate[], player: Player): Collision[] {
-    const collisions = [];
+    const collisions: Collision[] = [];
 
     for (const candidate of candidates) {
       // Get the point of the block closest to the center of the player's bounding cylinder

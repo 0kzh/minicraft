@@ -1,6 +1,6 @@
 {
-  "name": "compound-challenge",
-  "version": "0.0.0",
+  "name": "minicraft",
+  "version": "0.1.0",
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",

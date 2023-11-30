@@ -62,6 +62,8 @@ export class World extends THREE.Group {
   dataStore = new DataStore();
   pointLights = new Map<string, THREE.PointLight>();
 
+  wireframeMode = false;
+
   constructor(seed = 0, scene: THREE.Scene) {
     super();
     this.seed = seed;
@@ -270,7 +272,12 @@ export class World extends THREE.Group {
    * Generates the chunk at (x, z) coordinates
    */
   async generateChunk(x: number, z: number) {
-    const chunk = new WorldChunk(this.chunkSize, this.params, this.dataStore);
+    const chunk = new WorldChunk(
+      this.chunkSize,
+      this.params,
+      this.dataStore,
+      this.wireframeMode
+    );
     chunk.position.set(x * this.chunkSize.width, 0, z * this.chunkSize.width);
     chunk.userData = { x, z };
 

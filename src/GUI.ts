@@ -52,6 +52,7 @@ export function createUI(
   }
 
   const terrainFolder = gui.addFolder("Terrain");
+  terrainFolder.add(world, "wireframeMode").name("X-ray Mode (Disable Textures)");
   terrainFolder.add(world.chunkSize, "width", 8, 128, 1).name("Width");
   terrainFolder.add(world.chunkSize, "height", 8, 64, 1).name("Height");
   terrainFolder.add(world.params, "seed", 1, 10000, 1).name("Seed");
