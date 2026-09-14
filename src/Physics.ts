@@ -67,6 +67,10 @@ export class Physics {
   /** Vertical kick when swimming into a ledge the player can climb */
   static FLUID_CLIMB_VELOCITY = 0.3;
 
+  /** Creative flight: vanilla `abilities.flyingSpeed` (x2 when sprinting) */
+  static FLY_SPEED = 0.05;
+  static FLY_VERTICAL_ACCELERATION = 0.035;
+
   accumulator = 0;
   helpers: THREE.Group;
 
@@ -92,6 +96,12 @@ export class Physics {
     player.beginTick();
     this.sampleFluid(player, world, player.getBox());
     player.tickInput();
+
+    if (player.flying) {
+      this.travelFlying(player, world, player.moveInput());
+      player.tickSprint();
+      return;
+    }
 
     if (player.jumping) {
       if (player.inFluid && player.fluidDepth > Physics.SWIM_DEPTH) {
@@ -121,6 +131,22 @@ export class Physics {
       player.velocity.z -= Math.cos(yaw) * Physics.SPRINT_JUMP_BOOST;
     }
     player.jumpCooldown = Physics.JUMP_COOLDOWN;
+  }
+
+  /** Creative flight: no gravity, uniform drag on every axis, jump/sneak to rise/sink */
+  private travelFlying(player: Player, world: World, move: THREE.Vector2) {
+    const speed = Physics.FLY_SPEED * (player.isSprinting ? 2 : 1);
+    this.accelerate(player, move, speed);
+    const v = player.velocity;
+    if (player.ascending) v.y += Physics.FLY_VERTICAL_ACCELERATION;
+    if (player.descending) v.y -= Physics.FLY_VERTICAL_ACCELERATION;
+
+    this.move(player, world);
+    player.fallDistance = 0;
+    // Touching down ends flight like vanilla
+    if (player.onGround && player.descending) player.flying = false;
+
+    v.multiplyScalar(Physics.AIR_FRICTION);
   }
 
   private travelOnLand(player: Player, world: World, move: THREE.Vector2) {
@@ -158,6 +184,7 @@ export class Physics {
 
     const startY = player.pos.y;
     this.move(player, world);
+    player.fallDistance = 0;
 
     const v = player.velocity;
     v.x *= friction;
@@ -263,6 +290,9 @@ export class Physics {
       (dz !== 0 && Math.abs(dz - result.dz) > EPSILON);
     const verticalCollision = dy !== result.dy;
     player.onGround = verticalCollision && dy < 0;
+
+    if (result.dy < 0) player.fallDistance -= result.dy;
+    if (player.onGround) player.land();
 
     if (player.horizontalCollision) {
       if (dx !== result.dx) v.x = 0;

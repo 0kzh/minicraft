@@ -2,15 +2,14 @@ import GUI from "lil-gui";
 
 import { Physics } from "./Physics";
 import { Player } from "./Player";
+import { Sky } from "./Sky";
 import { World } from "./World";
 
 export function createUI(
   world: World,
   player: Player,
   physics: Physics,
-  fogRange: { near: number; far: number },
-  sunSettings: { distance: number; cycleLength: number },
-  sunHelper: THREE.DirectionalLightHelper,
+  sky: Sky,
   regenerate: () => void
 ): GUI {
   const gui = new GUI({ title: "Debug (F3)" });
@@ -26,25 +25,20 @@ export function createUI(
     });
 
   const playerFolder = gui.addFolder("Player");
-  playerFolder.add(player, "maxSpeed", 1, 50, 1).name("Max Speed");
-  playerFolder.add(player, "jumpSpeed", 1, 10, 1).name("Jump Speed");
+  playerFolder.add(Physics, "BASE_SPEED", 0.02, 0.5, 0.01).name("Walk Speed");
+  playerFolder.add(Physics, "JUMP_VELOCITY", 0.1, 1.5, 0.01).name("Jump");
+  playerFolder.add(Physics, "FLY_SPEED", 0.01, 0.5, 0.01).name("Fly Speed");
   playerFolder.add(player.cameraHelper, "visible").name("Camera Helper");
   playerFolder.add(player.boundsHelper, "visible").name("Show Player Bounds");
 
   const physicsFolder = gui.addFolder("Physics");
   physicsFolder.add(physics.helpers, "visible").name("Visualize Collisions");
-  physicsFolder
-    .add(physics, "simulationRate", 10, 1000)
-    .name("Simulation Rate");
+  physicsFolder.add(Physics, "GRAVITY", 0, 0.3, 0.005).name("Gravity");
 
   const worldFolder = gui.addFolder("World");
-  worldFolder.add(sunHelper, "visible").name("Show Sun Helper");
-  worldFolder
-    .add(sunSettings, "cycleLength", 0, 1000, 1)
-    .name("Day Length (s)");
-  worldFolder.add(world, "renderDistance", 1, 32, 1).name("Render Distance");
-  worldFolder.add(fogRange, "near", 1, 400, 1).name("Fog Near");
-  worldFolder.add(fogRange, "far", 1, 600, 1).name("Fog Far");
+  worldFolder.add(sky, "cycleLength", 10, 3600, 1).name("Day Length (s)");
+  worldFolder.add(sky, "timeOffset", 0, 1, 0.001).name("Time of Day");
+  worldFolder.add(world, "renderDistance", 2, 32, 1).name("Render Distance");
 
   const terrainFolder = gui.addFolder("Terrain");
   terrainFolder

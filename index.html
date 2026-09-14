@@ -33,6 +33,11 @@
 			<svg id="cursor" width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
 				<path d="M3 12H21M12 3L12 21" stroke="white" stroke-width="2"/>
 			</svg>
+			<div id="hurt-overlay"></div>
+			<div id="hud">
+				<div id="health" class="status-row"></div>
+				<div id="air" class="status-row"></div>
+			</div>
 			<div id="toolbar">
 				<img id="toolbar-bg" src="gui/toolbar.png" />
 				<img id="toolbar-active-border" src="gui/toolbar_active.png" />
@@ -65,6 +70,13 @@
 							<div id="resume" class="title">Back to Game</div>
 						</div>
 						<div class="mc-button full" tabindex="0" role="button">
+							<div id="game-mode" class="title">Game Mode: Survival</div>
+						</div>
+						<div class="mc-button full" tabindex="0" role="button">
+							<div id="render-distance" class="title">Render Distance: 8 chunks</div>
+							<input id="render-distance-slider" type="range" min="2" max="32" step="1" value="8" aria-label="Render distance" />
+						</div>
+						<div class="mc-button full" tabindex="0" role="button">
 							<div id="new-world" class="title">New World</div>
 						</div>
 						<div class="mc-button full" tabindex="0" role="button">
@@ -72,8 +84,17 @@
 						</div>
 					</div>
 					<p id="seed-label"></p>
-					<p class="hint">WASD move &middot; Space jump / swim &middot; Left click break &middot; Right click place &middot; 1-9 pick block &middot; F3 debug</p>
+					<p class="hint">WASD move &middot; Space jump / swim &middot; Shift sneak &middot; Ctrl or double-tap W sprint &middot; Double-tap Space fly (creative) &middot; Left click break &middot; Right click place &middot; 1-9 / scroll pick block &middot; Esc menu &middot; F3 debug</p>
 					<p>by Kelvin Zhang</p>
+				</div>
+			</div>
+		</div>
+		<div id="death">
+			<div id="death-menu">
+				<h1>You died!</h1>
+				<p id="death-cause"></p>
+				<div class="mc-button" tabindex="0" role="button">
+					<div id="respawn" class="title">Respawn</div>
 				</div>
 			</div>
 		</div>

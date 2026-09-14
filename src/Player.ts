@@ -8,6 +8,8 @@ import audioManager from "./audio/AudioManager";
 import { BlockID } from "./Block";
 import { getBlockDef } from "./Block/blocks";
 import { raycastVoxels } from "./chunk/raycast";
+import { CREATIVE_PALETTE } from "./gameplay/blockStats";
+import { Inventory } from "./gameplay/Inventory";
 import { AABB, intersects, Physics } from "./Physics";
 import { World } from "./World";
 
@@ -68,6 +70,8 @@ const SPRINT_DOUBLE_TAP_MS = 350;
 const INPUT_IMPULSE = 0.98;
 /** Horizontal distance walked between footsteps */
 const STEP_DISTANCE = 1 / 0.6;
+/** Double-tapping jump within this window toggles creative flight */
+const FLY_DOUBLE_TAP_MS = 350;
 
 /**
  * Player state: a 0.6 x 1.8 box at `pos` (feet centre) moved by `Physics`
@@ -89,9 +93,18 @@ export class Player {
   fluidDepth = 0;
   eyeSubmerged = false;
   jumpCooldown = 0;
+  /** Blocks fallen since last standing on ground */
+  fallDistance = 0;
+  /** Fall distance of the most recent landing, until collected */
+  private landedFall = 0;
 
   isSprinting = false;
   isSneaking = false;
+  /** Creative flight */
+  flying = false;
+  canFly = false;
+  /** Dead players take no input */
+  dead = false;
 
   /** Held movement keys */
   #forward = false;
@@ -103,6 +116,7 @@ export class Player {
   #sprintKey = false;
   #lastForwardPress = 0;
   #forwardPressCount = 0;
+  #lastJumpPress = 0;
 
   #walkDistance = 0;
   #nextStep = STEP_DISTANCE;
@@ -131,19 +145,12 @@ export class Player {
   selectedCoords: THREE.Vector3 | null = null;
   /** Integer world coordinates of the block that would be placed */
   blockPlacementCoords: THREE.Vector3 | null = null;
+  /** Normal of the targeted face */
+  selectedNormal: THREE.Vector3 | null = null;
 
-  toolbar: (BlockID | null)[] = [
-    BlockID.Grass,
-    BlockID.Dirt,
-    BlockID.Stone,
-    BlockID.StoneBrick,
-    BlockID.RedstoneLamp,
-    BlockID.OakLog,
-    BlockID.Leaves,
-    BlockID.Sand,
-    BlockID.Water,
-  ];
-  activeToolbarIndex = 0;
+  /** Active hotbar: the creative palette or the survival inventory */
+  hotbar: Inventory = Inventory.creative(CREATIVE_PALETTE);
+  onHotbarChange: () => void = () => {};
 
   constructor(scene: THREE.Scene) {
     this.teleport(32, 72 + EYE_HEIGHT, 32);
@@ -157,9 +164,26 @@ export class Player {
 
     document.addEventListener("keydown", this.onKeyDown.bind(this));
     document.addEventListener("keyup", this.onKeyUp.bind(this));
+    document.addEventListener("wheel", this.onWheel.bind(this), {
+      passive: true,
+    });
     document.addEventListener("pointerlockchange", () => {
       if (!this.controls.isLocked) this.releaseKeys();
     });
+    window.addEventListener("blur", () => this.releaseKeys());
+  }
+
+  /** Fall distance of the last landing, cleared once read */
+  takeFallDistance(): number {
+    const fall = this.landedFall;
+    this.landedFall = 0;
+    return fall;
+  }
+
+  /** Records a landing so fall damage can be applied */
+  land() {
+    this.landedFall = this.fallDistance;
+    this.fallDistance = 0;
   }
 
   /** Eye position, as rendered this frame */
@@ -221,14 +245,26 @@ export class Player {
     this.prevPos.copy(this.pos);
   }
 
+  /** Whether jump is held (flying: ascend) */
+  get ascending() {
+    return this.#jump;
+  }
+
+  /** Whether sneak is held (flying: descend) */
+  get descending() {
+    return this.#sneak;
+  }
+
   /** Resolves held keys into sneak/sprint state for this tick */
   tickInput() {
+    if (!this.canFly) this.flying = false;
     const wasSneaking = this.isSneaking;
-    this.isSneaking = this.#sneak && !this.inFluid;
+    this.isSneaking = this.#sneak && !this.inFluid && !this.flying;
     if (this.isSneaking && !wasSneaking) this.isSprinting = false;
 
     const forward = this.#forward && !this.#back;
-    const canSprint = forward && !this.isSneaking && !this.inFluid;
+    const canSprint =
+      forward && !this.isSneaking && (!this.inFluid || this.flying);
     if (canSprint && this.#sprintKey) this.isSprinting = true;
     if (!canSprint) this.isSprinting = false;
   }
@@ -281,11 +317,10 @@ export class Player {
     this.updateCameraFOV(dt);
     this.updateBoundsHelper();
     this.updateRaycaster(world);
-    this.updateToolbar();
     this.updateDebugPosition();
 
-    // prevent player from falling through
-    if (this.pos.y < -8) {
+    // Creative players falling out of the world are dropped back in from above
+    if (this.pos.y < -8 && this.canFly) {
       this.teleport(
         this.pos.x,
         world.chunkSize.height + 10 + this.#eyeHeight,
@@ -338,14 +373,20 @@ export class Player {
       }
     );
 
-    if (!hit) {
+    if (!hit || this.dead) {
       this.selectedCoords = null;
       this.blockPlacementCoords = null;
+      this.selectedNormal = null;
       this.selectionHelper.visible = false;
       return;
     }
 
     this.selectedCoords = new THREE.Vector3(hit.x, hit.y, hit.z);
+    this.selectedNormal = new THREE.Vector3(
+      hit.normal.x,
+      hit.normal.y,
+      hit.normal.z
+    );
     this.blockPlacementCoords = new THREE.Vector3(
       hit.x + hit.normal.x,
       hit.y + hit.normal.y,
@@ -363,20 +404,6 @@ export class Player {
     );
     this.selectionHelper.scale.set(x1 - x0, y1 - y0, z1 - z0);
     this.selectionHelper.visible = true;
-  }
-
-  private updateToolbar() {
-    for (let i = 1; i <= 9; i++) {
-      const slot = document.getElementById(`toolbar-slot-${i}`);
-      if (slot) {
-        const blockId = this.toolbar[i - 1];
-        if (blockId != null && blockId !== BlockID.Air) {
-          slot.style.backgroundImage = `url('${
-            getBlockDef(blockId).uiTexture
-          }')`;
-        }
-      }
-    }
   }
 
   private updateDebugPosition() {
@@ -405,10 +432,20 @@ export class Player {
   }
 
   get activeBlockId() {
-    return this.toolbar[this.activeToolbarIndex];
+    return this.hotbar.selectedBlock;
   }
 
-  private releaseKeys() {
+  selectSlot(index: number) {
+    this.hotbar.select(index);
+    this.onHotbarChange();
+  }
+
+  private onWheel(event: WheelEvent) {
+    if (!this.controls.isLocked || this.dead || event.deltaY === 0) return;
+    this.selectSlot(this.hotbar.selected + Math.sign(event.deltaY));
+  }
+
+  releaseKeys() {
     this.#forward = false;
     this.#back = false;
     this.#left = false;
@@ -419,11 +456,7 @@ export class Player {
   }
 
   onKeyDown(event: KeyboardEvent) {
-    const validKeys = ["KeyW", "KeyA", "KeyS", "KeyD"];
-    if (validKeys.includes(event.code) && !this.controls.isLocked) {
-      this.controls.lock();
-    }
-    if (event.repeat) return;
+    if (event.repeat || !this.controls.isLocked || this.dead) return;
 
     switch (event.code) {
       case "Digit1":
@@ -435,10 +468,7 @@ export class Player {
       case "Digit7":
       case "Digit8":
       case "Digit9":
-        this.activeToolbarIndex = Number(event.key) - 1;
-        document
-          ?.getElementById("toolbar-active-border")
-          ?.setAttribute("style", `left: ${this.activeToolbarIndex * 11}%`);
+        this.selectSlot(Number(event.code.slice(-1)) - 1);
         break;
       case "KeyW": {
         const now = performance.now();
@@ -463,9 +493,18 @@ export class Player {
       case "KeyD":
         this.#right = true;
         break;
-      case "Space":
+      case "Space": {
+        const now = performance.now();
+        if (this.canFly && now - this.#lastJumpPress < FLY_DOUBLE_TAP_MS) {
+          this.flying = !this.flying;
+          this.#lastJumpPress = 0;
+          if (this.flying) this.velocity.y = 0;
+        } else {
+          this.#lastJumpPress = now;
+        }
         this.#jump = true;
         break;
+      }
       case "ShiftLeft":
       case "ShiftRight":
         this.#sneak = true;

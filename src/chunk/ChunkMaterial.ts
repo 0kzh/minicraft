@@ -17,12 +17,12 @@ const vertexShader = /* glsl */ `
   out float vShade;
   out float vEmissive;
   out vec2 vLight;
+  out vec3 vViewPos;
+  out vec3 vWorldPos;
 
   uniform float uTime;
   // (base layer, first frame layer, frame count, fps) per animated texture
   uniform vec4 uAnim[MAX_ANIMATIONS];
-
-  #include <fog_pars_vertex>
 
   // Per-face directional shading: +X, -X, +Y, -Y, +Z, -Z
   const float FACE_SHADE[6] = float[6](0.6, 0.6, 1.0, 0.5, 0.8, 0.8);
@@ -44,8 +44,9 @@ const vertexShader = /* glsl */ `
     vEmissive = float((flags >> 3) & 1);
 
     vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+    vViewPos = mvPosition.xyz;
+    vWorldPos = (modelMatrix * vec4(position, 1.0)).xyz;
     gl_Position = projectionMatrix * mvPosition;
-    #include <fog_vertex>
   }
 `;
 
@@ -57,14 +58,19 @@ const fragmentShader = /* glsl */ `
   uniform float uSunLight;
   uniform bool uWireframe;
   uniform float uAlpha;
+  uniform vec3 uFogColor;
+  // x: start distance, y: end distance, z: 1 = cylindrical (horizontal
+  // distance, so terrain fades at the render distance regardless of height),
+  // 0 = spherical (underwater)
+  uniform vec3 uFog;
 
   in vec2 vUv;
   in float vLayer;
   in float vShade;
   in float vEmissive;
   in vec2 vLight;
-
-  #include <fog_pars_fragment>
+  in vec3 vViewPos;
+  in vec3 vWorldPos;
 
   // Minecraft's light-level brightness curve: 0 -> 0, 0.5 -> 0.2, 1 -> 1
   float brightness(float level) {
@@ -98,7 +104,13 @@ const fragmentShader = /* glsl */ `
       gl_FragColor = vec4(texel.rgb * light, 1.0);
     #endif
 
-    #include <fog_fragment>
+    float dist = mix(
+      length(vViewPos),
+      length(vWorldPos.xz - cameraPosition.xz),
+      uFog.z
+    );
+    float fog = smoothstep(uFog.x, uFog.y, dist);
+    gl_FragColor.rgb = mix(gl_FragColor.rgb, uFogColor, fog);
     #include <colorspace_fragment>
   }
 `;
@@ -110,6 +122,8 @@ export type ChunkUniforms = {
   uTime: THREE.IUniform<number>;
   uAlpha: THREE.IUniform<number>;
   uAnim: THREE.IUniform<THREE.Vector4[]>;
+  uFogColor: THREE.IUniform<THREE.Color>;
+  uFog: THREE.IUniform<THREE.Vector3>;
 };
 
 type Variant = "opaque" | "cutout" | "translucent";
@@ -139,6 +153,8 @@ export class ChunkMaterials {
       uTime: { value: 0 },
       uAlpha: { value: 0.72 },
       uAnim: { value: anim },
+      uFogColor: { value: new THREE.Color(0xc0d8ff) },
+      uFog: { value: new THREE.Vector3(80, 124, 1) },
     };
 
     const make = (variant: Variant) =>
@@ -146,10 +162,8 @@ export class ChunkMaterials {
         glslVersion: THREE.GLSL3,
         vertexShader,
         fragmentShader,
-        uniforms: THREE.UniformsUtils.merge([
-          THREE.UniformsLib.fog,
-          this.uniforms,
-        ]),
+        // Shared uniform objects so one update drives every layer
+        uniforms: { ...this.uniforms },
         defines: {
           MAX_ANIMATIONS,
           UV_SCALE: UV_SCALE.toFixed(1),
@@ -159,7 +173,6 @@ export class ChunkMaterials {
             ? { TRANSLUCENT: "" }
             : {}),
         },
-        fog: true,
         side: variant === "opaque" ? THREE.FrontSide : THREE.DoubleSide,
         transparent: variant === "translucent",
         depthWrite: true,
@@ -168,13 +181,6 @@ export class ChunkMaterials {
     this.opaque = make("opaque");
     this.cutout = make("cutout");
     this.translucent = make("translucent");
-
-    // UniformsUtils.merge clones values; re-point the materials at the shared uniform objects
-    for (const material of this.all) {
-      for (const key of Object.keys(this.uniforms) as (keyof ChunkUniforms)[]) {
-        material.uniforms[key] = this.uniforms[key];
-      }
-    }
   }
 
   private get all() {
@@ -183,6 +189,12 @@ export class ChunkMaterials {
 
   set sunLight(value: number) {
     this.uniforms.uSunLight.value = value;
+  }
+
+  /** Distance fog: colour, start/end in blocks, cylindrical or spherical */
+  setFog(color: THREE.Color, start: number, end: number, cylindrical: boolean) {
+    this.uniforms.uFogColor.value.copy(color);
+    this.uniforms.uFog.value.set(start, end, cylindrical ? 1 : 0);
   }
 
   /** Elapsed seconds, drives liquid animation */

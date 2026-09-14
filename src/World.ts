@@ -433,23 +433,24 @@ export class World extends THREE.Group implements FluidWorld {
   /**
    * Adds a new block at (x, y, z)
    */
-  addBlock(x: number, y: number, z: number, block: BlockID) {
+  addBlock(x: number, y: number, z: number, block: BlockID): boolean {
     const existing = this.getBlock(x, y, z);
-    if (existing === undefined) return;
-    if (existing !== BlockID.Air && !getBlockDef(existing).fluid) return;
-    if (this.setBlock(x, y, z, block)) {
-      this.playBlockSound(block);
-      this.fluids.scheduleAround(x, y, z);
-    }
+    if (existing === undefined) return false;
+    if (existing !== BlockID.Air && !getBlockDef(existing).fluid) return false;
+    if (!this.setBlock(x, y, z, block)) return false;
+    this.playBlockSound(block);
+    this.fluids.scheduleAround(x, y, z);
+    return true;
   }
 
-  removeBlock(x: number, y: number, z: number) {
+  removeBlock(x: number, y: number, z: number): boolean {
     const id = this.getBlock(x, y, z);
     if (id === undefined || id === BlockID.Air || id === BlockID.Bedrock) {
-      return;
+      return false;
     }
 
-    if (this.setBlock(x, y, z, BlockID.Air)) {
+    const removed = this.setBlock(x, y, z, BlockID.Air);
+    if (removed) {
       this.playBlockSound(id);
       this.fluids.scheduleAround(x, y, z);
     }
@@ -464,6 +465,12 @@ export class World extends THREE.Group implements FluidWorld {
     ) {
       this.removeBlock(x, y + 1, z);
     }
+    return removed;
+  }
+
+  /** Nearest dry land to the world spawn, for respawning */
+  getSpawn(): THREE.Vector3 {
+    return this.findSpawn(this.spawnPoint);
   }
 
   playBlockSound(id: BlockID) {
