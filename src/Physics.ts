@@ -1,6 +1,7 @@
 import * as THREE from "three";
 
 import { BlockID } from "./Block";
+import { getBlockDef } from "./Block/blocks";
 import { Player } from "./Player";
 import { World } from "./World";
 
@@ -34,6 +35,11 @@ const contactGeometry = new THREE.SphereGeometry(0.05, 6, 6);
 export class Physics {
   // Acceleration due to gravity
   static GRAVITY = -32;
+  // Gravity while submerged, before drag
+  static FLUID_GRAVITY = -6;
+  // Velocity damping per second in fluids
+  static FLUID_DRAG = 3.5;
+  static FLUID_SINK_SPEED = -2.5;
 
   // Physics simulation rate
   simulationRate = 250;
@@ -54,14 +60,34 @@ export class Physics {
     const blockUnderneath =
       this.getBlockUnderneath(player, world) ?? BlockID.Air;
 
+    player.inFluid = this.isInFluid(player, world);
+
     while (this.accumulator >= this.stepSize) {
-      player.velocity.y += Physics.GRAVITY * this.stepSize;
+      if (player.inFluid) {
+        player.velocity.y += Physics.FLUID_GRAVITY * this.stepSize;
+        player.velocity.y -=
+          player.velocity.y * Physics.FLUID_DRAG * this.stepSize;
+        if (player.velocity.y < Physics.FLUID_SINK_SPEED)
+          player.velocity.y = Physics.FLUID_SINK_SPEED;
+      } else {
+        player.velocity.y += Physics.GRAVITY * this.stepSize;
+      }
       player.applyInputs(this.stepSize, blockUnderneath);
       this.detectCollisions(player, world);
       this.accumulator -= this.stepSize;
     }
 
     player.update(world);
+  }
+
+  /** True when the player's lower body is inside water or lava */
+  isInFluid(player: Player, world: World) {
+    const id = world.getBlock(
+      Math.floor(player.position.x),
+      Math.floor(player.position.y - player.height + 0.4),
+      Math.floor(player.position.z)
+    );
+    return id !== undefined && getBlockDef(id).fluid;
   }
 
   getBlockUnderneath(player: Player, world: World) {

@@ -22,6 +22,23 @@ export const TEXTURE_LAYERS = [
   "stonebrick",
   "sand",
   "snow",
+  "water",
+  "lava",
+  "sandstone_top",
+  "sandstone_side",
+  "gravel",
+  "snow_grass_side",
+  "spruce_log_side",
+  "spruce_log_top",
+  "spruce_leaves",
+  "birch_log_side",
+  "birch_log_top",
+  "birch_leaves",
+  "cactus_side",
+  "cactus_top",
+  "dead_bush",
+  "gold_ore",
+  "diamond_ore",
 ] as const;
 
 export type TextureName = typeof TEXTURE_LAYERS[number];
@@ -38,9 +55,16 @@ export enum RenderGeometry {
 export enum RenderLayer {
   Opaque,
   Cutout,
+  Translucent,
 }
 
-export type SoundGroup = "grass" | "wood" | "stone";
+export type SoundGroup =
+  | "grass"
+  | "wood"
+  | "stone"
+  | "sand"
+  | "snow"
+  | "gravel";
 
 export type BlockDef = {
   id: BlockID;
@@ -51,6 +75,8 @@ export type BlockDef = {
   opaque: boolean;
   /** Player and physics can pass through */
   passable: boolean;
+  /** Liquid: slows and buoys the player, tints the view when submerged */
+  fluid: boolean;
   /** Rendered at full brightness regardless of lighting */
   emissive: boolean;
   /** Block light emitted (0-15) */
@@ -96,6 +122,7 @@ const cube = (
   layer: RenderLayer.Opaque,
   opaque: true,
   passable: false,
+  fluid: false,
   emissive: false,
   lightEmission: 0,
   lightOpacity: 15,
@@ -105,6 +132,36 @@ const cube = (
   sound,
   ...overrides,
 });
+
+const leaves = (
+  id: BlockID,
+  name: string,
+  texture: TextureName,
+  uiTexture: string
+): BlockDef =>
+  cube(id, name, texture, uiTexture, "grass", {
+    layer: RenderLayer.Cutout,
+    opaque: false,
+    lightOpacity: 1,
+    cullSelf: false,
+  });
+
+const fluid = (
+  id: BlockID,
+  name: string,
+  texture: TextureName,
+  uiTexture: string,
+  overrides: Partial<BlockDef> = {}
+): BlockDef =>
+  cube(id, name, texture, uiTexture, "stone", {
+    layer: RenderLayer.Translucent,
+    opaque: false,
+    passable: true,
+    fluid: true,
+    lightOpacity: 2,
+    cullSelf: true,
+    ...overrides,
+  });
 
 const cross = (
   id: BlockID,
@@ -118,6 +175,7 @@ const cross = (
   layer: RenderLayer.Cutout,
   opaque: false,
   passable: true,
+  fluid: false,
   emissive: false,
   lightEmission: 0,
   lightOpacity: 0,
@@ -135,6 +193,7 @@ const defs: BlockDef[] = [
     layer: RenderLayer.Opaque,
     opaque: false,
     passable: true,
+    fluid: false,
     emissive: false,
     lightEmission: 0,
     lightOpacity: 0,
@@ -180,19 +239,7 @@ const defs: BlockDef[] = [
     "textures/oak_log_block.png",
     "wood"
   ),
-  cube(
-    BlockID.Leaves,
-    "leaves",
-    "leaves",
-    "textures/leaves_block.png",
-    "grass",
-    {
-      layer: RenderLayer.Cutout,
-      opaque: false,
-      lightOpacity: 1,
-      cullSelf: false,
-    }
-  ),
+  leaves(BlockID.Leaves, "leaves", "leaves", "textures/leaves_block.png"),
   cross(
     BlockID.TallGrass,
     "tall_grass",
@@ -224,6 +271,88 @@ const defs: BlockDef[] = [
     "stone_brick",
     "stonebrick",
     "textures/stonebrick_block.png",
+    "stone"
+  ),
+  fluid(BlockID.Water, "water", "water", "textures/water_block.png"),
+  fluid(BlockID.Lava, "lava", "lava", "textures/lava_block.png", {
+    emissive: true,
+    lightEmission: 15,
+    lightOpacity: 15,
+  }),
+  cube(BlockID.Sand, "sand", "sand", "textures/sand_block.png", "sand"),
+  cube(
+    BlockID.Sandstone,
+    "sandstone",
+    { side: "sandstone_side", top: "sandstone_top" },
+    "textures/sandstone_block.png",
+    "stone"
+  ),
+  cube(
+    BlockID.Gravel,
+    "gravel",
+    "gravel",
+    "textures/gravel_block.png",
+    "gravel"
+  ),
+  cube(
+    BlockID.SnowGrass,
+    "snow_grass",
+    { side: "snow_grass_side", top: "snow", bottom: "dirt" },
+    "textures/snow_grass_block.png",
+    "snow"
+  ),
+  cube(BlockID.Snow, "snow", "snow", "textures/snow_block.png", "snow"),
+  cube(
+    BlockID.SpruceLog,
+    "spruce_log",
+    { side: "spruce_log_side", top: "spruce_log_top" },
+    "textures/spruce_log_block.png",
+    "wood"
+  ),
+  leaves(
+    BlockID.SpruceLeaves,
+    "spruce_leaves",
+    "spruce_leaves",
+    "textures/spruce_leaves_block.png"
+  ),
+  cube(
+    BlockID.BirchLog,
+    "birch_log",
+    { side: "birch_log_side", top: "birch_log_top" },
+    "textures/birch_log_block.png",
+    "wood"
+  ),
+  leaves(
+    BlockID.BirchLeaves,
+    "birch_leaves",
+    "birch_leaves",
+    "textures/birch_leaves_block.png"
+  ),
+  cube(
+    BlockID.Cactus,
+    "cactus",
+    { side: "cactus_side", top: "cactus_top" },
+    "textures/cactus_block.png",
+    "grass"
+  ),
+  cross(
+    BlockID.DeadBush,
+    "dead_bush",
+    "dead_bush",
+    "textures/dead_bush_block.png"
+  ),
+  cube(
+    BlockID.GoldOre,
+    "gold_ore",
+    "gold_ore",
+    "textures/gold_block.png",
+    "stone"
+  ),
+  cube(
+    BlockID.DiamondOre,
+    "diamond_ore",
+    "diamond_ore",
+    "textures/diamond_block.png",
     "stone"
   ),
 ];

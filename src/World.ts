@@ -25,45 +25,35 @@ export class World extends THREE.Group {
   renderDistance = 8;
   chunkSize: ChunkSize = {
     width: 16,
-    height: 32,
+    height: 128,
   };
   initialLoadComplete = false;
 
   params: WorldParams = {
     seed: 0,
     terrain: {
-      scale: 50,
-      magnitude: 0.1,
-      offset: 0.5,
+      seaLevel: 62,
+      continentScale: 700,
+      erosionScale: 480,
+      ridgeScale: 170,
+      detailScale: 42,
+      biomeScale: 560,
+      riverScale: 420,
+      rivers: true,
+      amplitude: 1,
     },
-    surface: {
-      offset: 4,
-      magnitude: 4,
+    caves: {
+      enabled: true,
+      cheeseScale: 52,
+      cheeseThreshold: 0.5,
+      spaghettiScale: 34,
+      spaghettiRadius: 0.085,
+      lavaLevel: 10,
+      ravines: true,
     },
-    bedrock: {
-      offset: 1,
-      magnitude: 1,
-    },
-    trees: {
-      frequency: 0.04,
-      trunkHeight: {
-        min: 5,
-        max: 7,
-      },
-      canopy: {
-        size: {
-          min: 1,
-          max: 3,
-        },
-      },
-    },
-    grass: {
-      frequency: 0.02,
-      patchSize: 5,
-    },
-    flowers: {
-      frequency: 0.0075,
-    },
+    trees: { density: 1 },
+    vegetation: { density: 1 },
+    ores: { density: 1 },
   };
 
   // Used for persisting changes to the world
@@ -225,16 +215,50 @@ export class World extends THREE.Group {
     this.initialLoadComplete = true;
     this.setLoadingScreenVisible(false);
 
-    const spawn = this.spawnPoint.clone();
-    for (let y = this.chunkSize.height - 1; y > 0; y--) {
-      if (this.isSolid(Math.floor(spawn.x), y, Math.floor(spawn.z))) {
-        spawn.y = y;
-        break;
-      }
-    }
+    const spawn = this.findSpawn(this.spawnPoint);
     player.position.set(spawn.x, spawn.y + 10, spawn.z);
     player.velocity.set(0, 0, 0);
     player.controls.lock();
+  }
+
+  /**
+   * Picks a spawn column near `around`: the nearest dry land above sea level,
+   * falling back to whatever ground is under the requested point.
+   */
+  private findSpawn(around: THREE.Vector3): THREE.Vector3 {
+    const sea = this.params.terrain.seaLevel;
+    const groundAt = (x: number, z: number): number => {
+      for (let y = this.chunkSize.height - 1; y > 0; y--) {
+        const id = this.getBlock(x, y, z);
+        if (id === undefined || id === BlockID.Air) continue;
+        const def = getBlockDef(id);
+        if (def.fluid) return -1;
+        if (!def.passable) return y;
+      }
+      return -1;
+    };
+
+    const cx = Math.floor(around.x);
+    const cz = Math.floor(around.z);
+    const maxRadius = this.renderDistance * this.chunkSize.width;
+    for (let r = 0; r <= maxRadius; r += 2) {
+      for (let dx = -r; dx <= r; dx += 2) {
+        for (const dz of r === 0 ? [0] : [-r, r]) {
+          for (const [x, z] of [
+            [cx + dx, cz + dz],
+            [cx + dz, cz + dx],
+          ]) {
+            const y = groundAt(x, z);
+            if (y >= sea) return new THREE.Vector3(x + 0.5, y, z + 0.5);
+          }
+        }
+      }
+    }
+    return new THREE.Vector3(
+      around.x,
+      Math.max(groundAt(cx, cz), sea),
+      around.z
+    );
   }
 
   getBlockUnderneath(position: THREE.Vector3, playerHeight: number) {
@@ -372,7 +396,9 @@ export class World extends THREE.Group {
    * Adds a new block at (x, y, z)
    */
   addBlock(x: number, y: number, z: number, block: BlockID) {
-    if (this.getBlock(x, y, z) !== BlockID.Air) return;
+    const existing = this.getBlock(x, y, z);
+    if (existing === undefined) return;
+    if (existing !== BlockID.Air && !getBlockDef(existing).fluid) return;
     if (this.setBlock(x, y, z, block)) {
       this.playBlockSound(block);
     }
@@ -390,10 +416,12 @@ export class World extends THREE.Group {
 
     // Plants above lose their support
     const above = this.getBlock(x, y + 1, z);
+    const aboveDef = above === undefined ? undefined : getBlockDef(above);
     if (
-      above !== undefined &&
+      aboveDef &&
       above !== BlockID.Air &&
-      getBlockDef(above).passable
+      aboveDef.passable &&
+      !aboveDef.fluid
     ) {
       this.removeBlock(x, y + 1, z);
     }

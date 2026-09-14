@@ -36,7 +36,11 @@ export type MeshBuffers = {
 export type ChunkMesh = {
   opaque: MeshBuffers;
   cutout: MeshBuffers;
+  translucent: MeshBuffers;
 };
+
+/** How far below the block top a liquid's exposed surface sits */
+export const FLUID_SURFACE_DROP = 0.125;
 
 export const FACE_POS_X = 0;
 export const FACE_NEG_X = 1;
@@ -171,9 +175,26 @@ function grow<T extends Float32Array | Uint8Array | Uint32Array>(
 const occludes = (neighbor: BlockDef, self: BlockDef): boolean =>
   neighbor.opaque || (neighbor.id === self.id && self.cullSelf);
 
-/** Mask entry: non-zero when a face exists; encodes texture layer, render layer and emissive flag */
-const faceKey = (def: BlockDef, face: number): number =>
-  (def.faces[face] + 1) | (def.emissive ? 1 << 9 : 0) | (def.layer << 10);
+/**
+ * Mask entry: non-zero when a face exists; encodes texture layer, render
+ * layer, emissive flag and whether a liquid face borders its lowered surface.
+ */
+const faceKey = (def: BlockDef, face: number, surface: boolean): number =>
+  (def.faces[face] + 1) |
+  (def.emissive ? 1 << 9 : 0) |
+  (def.layer << 10) |
+  (surface ? 1 << 12 : 0);
+
+const SURFACE_BIT = 1 << 12;
+
+/** A liquid cell is a surface cell when the block above is not the same liquid */
+const isFluidSurface = (
+  vol: LitVolume,
+  def: BlockDef,
+  x: number,
+  y: number,
+  z: number
+): boolean => def.fluid && vol.get(x, y + 1, z) !== def.id;
 
 /**
  * Smooth lighting and ambient occlusion for the four corners of the face of
@@ -274,6 +295,7 @@ export function meshChunk(size: ChunkSize, n: ChunkNeighborhood): ChunkMesh {
   const builders = {
     [RenderLayer.Opaque]: new GeometryBuilder(),
     [RenderLayer.Cutout]: new GeometryBuilder(),
+    [RenderLayer.Translucent]: new GeometryBuilder(),
   };
 
   meshCubes(size, vol, builders);
@@ -282,6 +304,7 @@ export function meshChunk(size: ChunkSize, n: ChunkNeighborhood): ChunkMesh {
   return {
     opaque: builders[RenderLayer.Opaque].build(),
     cutout: builders[RenderLayer.Cutout].build(),
+    translucent: builders[RenderLayer.Translucent].build(),
   };
 }
 
@@ -337,7 +360,11 @@ function meshCubes(
             a.geometry === RenderGeometry.Cube &&
             !occludes(b, a)
           ) {
-            maskPos.key[idx] = faceKey(a, facePos);
+            maskPos.key[idx] = faceKey(
+              a,
+              facePos,
+              isFluidSurface(vol, a, pos[0], pos[1], pos[2])
+            );
             cornerShading(vol, next, u, v, keys);
             maskPos.ao[idx] = keys[0];
             maskPos.sky[idx] = keys[1];
@@ -351,7 +378,11 @@ function meshCubes(
             b.geometry === RenderGeometry.Cube &&
             !occludes(a, b)
           ) {
-            maskNeg.key[idx] = faceKey(b, faceNeg);
+            maskNeg.key[idx] = faceKey(
+              b,
+              faceNeg,
+              isFluidSurface(vol, b, next[0], next[1], next[2])
+            );
             cornerShading(vol, pos, u, v, keys);
             maskNeg.ao[idx] = keys[0];
             maskNeg.sky[idx] = keys[1];
@@ -440,6 +471,7 @@ function emitGreedy(
       }
 
       unpackShade(mask.ao[n], mask.sky[n], mask.block[n], shade);
+      const surface = (mask.key[n] & SURFACE_BIT) !== 0;
       for (let hh = 0; hh < h; hh++) {
         mask.key.fill(0, n + hh * du, n + hh * du + w);
       }
@@ -463,6 +495,15 @@ function emitGreedy(
       p2[v] += h;
       const p3 = base.slice();
       p3[v] += h;
+
+      if (surface && (d !== 1 || positive)) {
+        // Lower the exposed liquid surface: the whole top face, or the top
+        // edge of side faces (surface quads are always one block tall)
+        const top = d === 1 ? plane : base[1] + 1;
+        for (const p of [p0, p1, p2, p3]) {
+          if (p[1] === top) p[1] -= FLUID_SURFACE_DROP;
+        }
+      }
 
       const uv = (uOff: number, vOff: number) =>
         swapUV ? [vOff, uOff] : [uOff, vOff];

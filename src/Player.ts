@@ -58,7 +58,10 @@ export class Player {
   maxSprintSpeed = 5.612;
   // maxSpeed = 25;
   jumpSpeed = 10;
+  swimSpeed = 3.5;
+  fluidSpeedFactor = 0.45;
   onGround = false;
+  inFluid = false;
 
   input = new THREE.Vector3();
   velocity = new THREE.Vector3();
@@ -99,10 +102,10 @@ export class Player {
     BlockID.Stone,
     BlockID.StoneBrick,
     BlockID.RedstoneLamp,
-    BlockID.CoalOre,
-    BlockID.IronOre,
     BlockID.OakLog,
     BlockID.Leaves,
+    BlockID.Sand,
+    BlockID.Water,
   ];
   activeToolbarIndex = 0;
 
@@ -136,8 +139,9 @@ export class Player {
         .multiplyScalar(this.isSprinting ? this.maxSprintSpeed : this.maxSpeed);
     }
 
-    this.velocity.x = this.input.x;
-    this.velocity.z = this.input.z;
+    const speedFactor = this.inFluid ? this.fluidSpeedFactor : 1;
+    this.velocity.x = this.input.x * speedFactor;
+    this.velocity.z = this.input.z * speedFactor;
 
     // play step sound
     if (this.onGround && this.input.length() > 0) {
@@ -150,6 +154,11 @@ export class Player {
 
     if (this.spacePressed && this.onGround) {
       this.velocity.y = this.jumpSpeed;
+    } else if (this.spacePressed && this.inFluid) {
+      this.velocity.y = Math.min(
+        this.velocity.y + this.swimSpeed * 8 * dt,
+        this.swimSpeed
+      );
     }
 
     this.controls.moveRight(this.velocity.x * dt);
@@ -213,7 +222,7 @@ export class Player {
       REACH,
       (x, y, z) => {
         const id = world.getBlock(x, y, z);
-        return id !== undefined && id !== BlockID.Air;
+        return id !== undefined && id !== BlockID.Air && !getBlockDef(id).fluid;
       }
     );
 

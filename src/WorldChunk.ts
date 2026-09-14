@@ -17,8 +17,9 @@ import { WorldParams } from "./WorldParams";
 export type { ChunkSize as WorldSize } from "./chunk/ChunkData";
 
 /**
- * A single column of the world. Owns flat voxel data and up to two meshes
- * (opaque + cutout) that are rebuilt on a worker whenever the data changes.
+ * A single column of the world. Owns flat voxel data and up to three meshes
+ * (opaque, cutout, translucent) that are rebuilt on a worker whenever the
+ * data changes.
  */
 export class WorldChunk extends THREE.Group {
   readonly chunkX: number;
@@ -36,6 +37,7 @@ export class WorldChunk extends THREE.Group {
 
   private opaqueMesh: THREE.Mesh | null = null;
   private cutoutMesh: THREE.Mesh | null = null;
+  private translucentMesh: THREE.Mesh | null = null;
   private meshing = false;
   private meshVersion = 0;
 
@@ -135,6 +137,11 @@ export class WorldChunk extends THREE.Group {
       mesh.cutout,
       this.materials.cutout
     );
+    this.translucentMesh = this.swapMesh(
+      this.translucentMesh,
+      mesh.translucent,
+      this.materials.translucent
+    );
   }
 
   private swapMesh(
@@ -207,7 +214,11 @@ export class WorldChunk extends THREE.Group {
   dispose() {
     this.disposed = true;
     this.meshVersion++;
-    for (const mesh of [this.opaqueMesh, this.cutoutMesh]) {
+    for (const mesh of [
+      this.opaqueMesh,
+      this.cutoutMesh,
+      this.translucentMesh,
+    ]) {
       if (mesh) {
         this.remove(mesh);
         mesh.geometry.dispose();
@@ -215,5 +226,6 @@ export class WorldChunk extends THREE.Group {
     }
     this.opaqueMesh = null;
     this.cutoutMesh = null;
+    this.translucentMesh = null;
   }
 }

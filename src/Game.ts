@@ -5,6 +5,8 @@ import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import Stats from "three/examples/jsm/libs/stats.module";
 
 import audioManager from "./audio/AudioManager";
+import { BlockID } from "./Block";
+import { getBlockDef } from "./Block/blocks";
 import { loadBlockTextureArray } from "./Block/textures";
 import { ChunkMaterials } from "./chunk/ChunkMaterial";
 import { createUI } from "./GUI";
@@ -51,6 +53,7 @@ export default class Game {
     distance: 400,
     cycleLength: 600,
   };
+  private fogRange = { near: 50, far: 100 };
 
   private sky!: THREE.Mesh<THREE.BufferGeometry, THREE.ShaderMaterial>;
   private sun!: THREE.DirectionalLight;
@@ -149,7 +152,11 @@ export default class Game {
     this.sky = new THREE.Mesh(skyGeo, skyMat);
     this.scene.add(this.sky);
 
-    this.scene.fog = new THREE.Fog(0x80a0e0, 50, 100);
+    this.scene.fog = new THREE.Fog(
+      0x80a0e0,
+      this.fogRange.near,
+      this.fogRange.far
+    );
     this.scene.fog.color.copy(uniforms.bottomColor.value);
 
     this.sun = new THREE.DirectionalLight();
@@ -177,7 +184,7 @@ export default class Game {
       this.world,
       this.player,
       this.physics,
-      this.scene,
+      this.fogRange,
       this.sunSettings,
       this.sunHelper
     );
@@ -302,9 +309,9 @@ export default class Game {
     this.sky.material.uniforms.topColor.value = topColor;
     this.sky.material.uniforms.bottomColor.value = bottomColor;
     this.world.materials.sunLight = this.sun.intensity;
+    this.world.materials.time = elapsedTime;
 
-    // Desaturate the fog slightly
-    this.scene.fog?.color.copy(topColor).multiplyScalar(0.2);
+    this.updateFog(topColor);
 
     if (
       performance.now() - this.lastShadowUpdate <
@@ -317,6 +324,32 @@ export default class Game {
     this.updateSunPosition(sunAngle);
 
     this.lastShadowUpdate = performance.now();
+  }
+
+  /**
+   * Thick blue fog while the camera is submerged, otherwise a faint haze
+   * matching the sky
+   */
+  private updateFog(skyColor: THREE.Color) {
+    const fog = this.scene.fog;
+    if (!(fog instanceof THREE.Fog)) return;
+    const eye = this.player.camera.position;
+    const eyeBlock = this.world.getBlock(
+      Math.floor(eye.x),
+      Math.floor(eye.y),
+      Math.floor(eye.z)
+    );
+    const submerged = eyeBlock !== undefined && getBlockDef(eyeBlock).fluid;
+    if (submerged) {
+      const lava = eyeBlock === BlockID.Lava;
+      fog.color.set(lava ? 0x7a1e00 : 0x0a2a55);
+      fog.near = lava ? 0 : 1;
+      fog.far = lava ? 4 : 22;
+    } else {
+      fog.color.copy(skyColor).multiplyScalar(0.2);
+      fog.near = this.fogRange.near;
+      fog.far = this.fogRange.far;
+    }
   }
 
   updateSunPosition(angle: number) {
