@@ -106,6 +106,8 @@ export class BlockBreaker {
       this.reset();
       return;
     }
+    // Minecraft.continueAttack swings the arm every tick a block is being hit
+    player.swing();
 
     const t = this.target;
     if (!t || t.x !== coords.x || t.y !== coords.y || t.z !== coords.z) {

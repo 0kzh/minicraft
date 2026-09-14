@@ -17,6 +17,8 @@ const fragmentShader = /* glsl */ `
   uniform vec3 uVoid;
   uniform vec3 uSunDir;
   uniform float uDaylight;
+  // Blocks; Java fogs the sky (FOG_SKY) linearly from 0 to the view distance
+  uniform float uFogEnd;
   varying vec3 vDir;
 
   float hash(vec3 p) {
@@ -28,8 +30,12 @@ const fragmentShader = /* glsl */ `
   void main() {
     vec3 dir = normalize(vDir);
     float h = dir.y;
+    // Java draws the sky as a plane 16 blocks up (LevelRenderer.buildSkyDisc),
+    // so the fog colour takes over as the view flattens towards the horizon
+    float skyDist = 16.0 / max(h, 1e-3);
+    float skyFog = clamp(skyDist / uFogEnd, 0.0, 1.0);
     vec3 c = h >= 0.0
-      ? mix(uHorizon, uZenith, smoothstep(0.0, 0.38, h))
+      ? mix(uZenith, uHorizon, skyFog)
       : mix(uHorizon, uVoid, smoothstep(0.08, 0.45, -h));
 
     // Stars fade in with the night, hidden below the horizon haze
@@ -46,9 +52,11 @@ const fragmentShader = /* glsl */ `
     c += vec3(0.9, 0.92, 1.0) * smoothstep(0.9988, 0.9993, m) * (1.0 - uDaylight);
 
     gl_FragColor = vec4(c, 1.0);
+    #include <colorspace_fragment>
   }
 `;
 
+// Plains biome `sky_color` 7907327 and `fog_color` 12638463
 const DAY_ZENITH = new THREE.Color(0x78a7ff);
 const DAY_HORIZON = new THREE.Color(0xc0d8ff);
 const NIGHT_ZENITH = new THREE.Color(0x03040c);
@@ -79,7 +87,13 @@ export class Sky {
     uVoid: { value: new THREE.Color() },
     uSunDir: { value: new THREE.Vector3(0, 1, 0) },
     uDaylight: { value: 1 },
+    uFogEnd: { value: 128 },
   };
+
+  /** View distance in blocks; controls how far up the fog colour reaches */
+  set fogEnd(blocks: number) {
+    this.uniforms.uFogEnd.value = Math.max(16, blocks);
+  }
 
   constructor() {
     this.mesh = new THREE.Mesh(

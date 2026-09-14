@@ -126,44 +126,72 @@ body {
   }
 }
 
-#hurt-overlay {
-  position: absolute;
-  inset: 0;
-  background: rgba(255, 0, 0, 0.45);
-  opacity: 0;
-  pointer-events: none;
-}
-
-/* Hearts and air bubbles sit just above the hotbar like vanilla */
+/*
+ * Survival status bars in vanilla GUI units (1 unit = 1/182 of the hotbar):
+ * 9px icons on an 8px pitch, hearts at the hotbar's left edge and food at
+ * its right, 39px above the bottom; air sits one row (10px) above the food.
+ */
 #hud {
+  --gu: calc(min(720px, 45vw) / 182);
   position: absolute;
   left: 50%;
-  bottom: calc(min(720px, 45vw) * 0.115);
+  bottom: 0;
   width: min(720px, 45vw);
+  height: 0;
   transform: translateX(-50%);
   display: none;
-  justify-content: space-between;
   pointer-events: none;
 
   .status-row {
+    position: absolute;
+    bottom: calc(var(--gu) * 30);
     display: flex;
-    gap: 0;
   }
 
+  #health {
+    left: 0;
+  }
+
+  #food,
   #air {
+    right: 0;
     flex-direction: row-reverse;
   }
 
+  #air {
+    bottom: calc(var(--gu) * 40);
+  }
+
   .icon {
-    width: calc(min(720px, 45vw) / 27);
-    aspect-ratio: 1;
+    --jitter: 0;
+    width: calc(var(--gu) * 9);
+    height: calc(var(--gu) * 9);
+    flex: none;
     background-size: 100% 100%;
     image-rendering: pixelated;
-    margin-right: -3px;
+    margin-right: calc(var(--gu) * -1);
+    transform: translateY(calc(var(--gu) * var(--jitter)));
+  }
+
+  #food .icon,
+  #air .icon {
+    margin-right: 0;
+    margin-left: calc(var(--gu) * -1);
   }
 
   .heart {
     background-image: url("/gui/icons/heart_background.png");
+    &.blink {
+      background-image: url("/gui/icons/heart_blink.png");
+    }
+    &.flash-full {
+      background-image: url("/gui/icons/heart_flash.png"),
+        url("/gui/icons/heart_blink.png");
+    }
+    &.flash-half {
+      background-image: url("/gui/icons/heart_flash_half.png"),
+        url("/gui/icons/heart_blink.png");
+    }
     &.full {
       background-image: url("/gui/icons/heart.png"),
         url("/gui/icons/heart_background.png");
@@ -171,6 +199,26 @@ body {
     &.half {
       background-image: url("/gui/icons/heart_half.png"),
         url("/gui/icons/heart_background.png");
+    }
+    &.blink.full {
+      background-image: url("/gui/icons/heart.png"),
+        url("/gui/icons/heart_blink.png");
+    }
+    &.blink.half {
+      background-image: url("/gui/icons/heart_half.png"),
+        url("/gui/icons/heart_flash.png"), url("/gui/icons/heart_blink.png");
+    }
+  }
+
+  .hunger {
+    background-image: url("/gui/icons/hunger_background.png");
+    &.full {
+      background-image: url("/gui/icons/hunger_full.png"),
+        url("/gui/icons/hunger_background.png");
+    }
+    &.half {
+      background-image: url("/gui/icons/hunger_half.png"),
+        url("/gui/icons/hunger_background.png");
     }
   }
 

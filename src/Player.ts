@@ -105,6 +105,14 @@ export class Player {
   canFly = false;
   /** Dead players take no input */
   dead = false;
+  /** Vanilla `LocalPlayer.aiStep`: false while too hungry to sprint */
+  sprintAllowed = true;
+  /** Vanilla `Player.causeFoodExhaustion` hook */
+  onExhaustion: (amount: number) => void = () => {};
+  /** Arm swing progress in ticks; -1 when idle (`LivingEntity.swingTime`) */
+  swingTime = -1;
+  /** Vanilla `LivingEntity.getCurrentSwingDuration` without haste/fatigue */
+  static SWING_DURATION = 6;
 
   /** Held movement keys */
   #forward = false;
@@ -193,10 +201,37 @@ export class Player {
 
   /** Moves the player so its eyes are at (x, y, z), resetting motion */
   teleport(x: number, y: number, z: number) {
-    this.pos.set(x, y - this.#eyeHeight, z);
+    this.placeFeet(x, y - this.#eyeHeight, z);
+  }
+
+  /** Moves the player so its feet are at (x, y, z), resetting motion and fall */
+  placeFeet(x: number, y: number, z: number) {
+    this.pos.set(x, y, z);
     this.prevPos.copy(this.pos);
     this.velocity.set(0, 0, 0);
-    this.camera.position.set(x, y, z);
+    this.fallDistance = 0;
+    this.landedFall = 0;
+    this.camera.position.set(x, y + this.#eyeHeight, z);
+  }
+
+  /** Vanilla `LivingEntity.swing`: restarts unless mid-swing */
+  swing() {
+    if (this.swingTime < 0 || this.swingTime >= Player.SWING_DURATION / 2) {
+      this.swingTime = 0;
+    }
+  }
+
+  /** Vanilla `LivingEntity.updateSwingTime` */
+  tickSwing() {
+    if (this.swingTime < 0) return;
+    this.swingTime++;
+    if (this.swingTime >= Player.SWING_DURATION) this.swingTime = -1;
+  }
+
+  /** Swing progress 0..1 for rendering (`LivingEntity.getAttackAnim`) */
+  swingProgress(alpha: number) {
+    if (this.swingTime < 0) return 0;
+    return Math.min(1, (this.swingTime + alpha) / Player.SWING_DURATION);
   }
 
   get eyeHeight() {
@@ -264,7 +299,10 @@ export class Player {
 
     const forward = this.#forward && !this.#back;
     const canSprint =
-      forward && !this.isSneaking && (!this.inFluid || this.flying);
+      forward &&
+      !this.isSneaking &&
+      (!this.inFluid || this.flying) &&
+      (this.sprintAllowed || this.canFly);
     if (canSprint && this.#sprintKey) this.isSprinting = true;
     if (!canSprint) this.isSprinting = false;
   }
@@ -290,6 +328,20 @@ export class Player {
   /** Ground speed relative to walking */
   speedMultiplier() {
     return this.isSprinting ? Physics.SPRINT_MULTIPLIER : 1;
+  }
+
+  /**
+   * Vanilla `Player.checkMovementStatistics`: swimming costs 0.01 and
+   * sprinting on the ground 0.1 food exhaustion per block
+   */
+  tickExhaustion() {
+    if (this.flying) return;
+    const dx = this.pos.x - this.prevPos.x;
+    const dz = this.pos.z - this.prevPos.z;
+    const dist = Math.sqrt(dx * dx + dz * dz);
+    if (dist < 1e-6) return;
+    if (this.inFluid) this.onExhaustion(0.01 * dist);
+    else if (this.onGround && this.isSprinting) this.onExhaustion(0.1 * dist);
   }
 
   /** Plays a footstep for roughly every block walked on the ground */
@@ -321,11 +373,7 @@ export class Player {
 
     // Creative players falling out of the world are dropped back in from above
     if (this.pos.y < -8 && this.canFly) {
-      this.teleport(
-        this.pos.x,
-        world.chunkSize.height + 10 + this.#eyeHeight,
-        this.pos.z
-      );
+      this.placeFeet(this.pos.x, world.chunkSize.height + 10, this.pos.z);
     }
   }
 

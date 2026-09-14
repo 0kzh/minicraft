@@ -3,6 +3,7 @@ import * as THREE from "three";
 import Stats from "three/examples/jsm/libs/stats.module";
 
 import audioManager from "./audio/AudioManager";
+import { BlockID } from "./Block";
 import { getBlockDef } from "./Block/blocks";
 import {
   BlockTextures,
@@ -12,6 +13,7 @@ import {
 import { ChunkMaterials } from "./chunk/ChunkMaterial";
 import { BlockBreaker } from "./gameplay/BlockBreaker";
 import { blockStats, CREATIVE_PALETTE } from "./gameplay/blockStats";
+import { HandRenderer } from "./gameplay/HandRenderer";
 import { Hud } from "./gameplay/Hud";
 import { Inventory } from "./gameplay/Inventory";
 import { Particles } from "./gameplay/Particles";
@@ -60,6 +62,7 @@ export default class Game {
   private physics!: Physics;
   private particles!: Particles;
   private breaker!: BlockBreaker;
+  private hand!: HandRenderer;
   private vitals = new Vitals();
   private hud = new Hud();
   private survivalInventory = new Inventory();
@@ -111,6 +114,9 @@ export default class Game {
       }
       if (saved.survival && saved.survival.health > 0) {
         this.vitals.health = saved.survival.health;
+        this.vitals.food = saved.survival.food ?? this.vitals.food;
+        this.vitals.saturation =
+          saved.survival.saturation ?? this.vitals.saturation;
         this.survivalInventory.load(saved.survival.inventory);
       }
     } else {
@@ -236,7 +242,7 @@ export default class Game {
     this.survivalInventory.clear();
     this.vitals.reset();
     const spawn = this.world.getSpawn();
-    this.player.teleport(spawn.x, spawn.y + 1, spawn.z);
+    this.player.placeFeet(spawn.x, spawn.y + 1, spawn.z);
     this.player.dead = false;
     this.refreshHotbar();
     this.flushSave();
@@ -364,6 +370,8 @@ export default class Game {
     this.meta.mode = this.mode;
     this.meta.survival = {
       health: this.vitals.health,
+      food: this.vitals.food,
+      saturation: this.vitals.saturation,
       inventory: this.survivalInventory.toJSON(),
     };
     this.meta.updatedAt = Date.now();
@@ -388,6 +396,8 @@ export default class Game {
     this.renderer.setPixelRatio(window.devicePixelRatio);
     this.renderer.setSize(window.innerWidth, window.innerHeight);
     this.renderer.setClearColor(0x80abfe);
+    // The hand is drawn in a second pass over the world, so clear by hand
+    this.renderer.autoClear = false;
     document.body.appendChild(this.renderer.domElement);
 
     this.sky = new Sky();
@@ -398,7 +408,11 @@ export default class Game {
 
     this.player = new Player(this.scene);
     this.player.onHotbarChange = () => this.refreshHotbar();
+    this.player.onExhaustion = (amount) => {
+      if (this.survival) this.vitals.addExhaustion(amount);
+    };
     this.physics = new Physics(this.scene);
+    this.hand = new HandRenderer(textures);
 
     this.particles = new Particles(textures, this.world);
     this.scene.add(this.particles.points);
@@ -415,6 +429,13 @@ export default class Game {
 
     this.vitals.onChange = () => this.hud.renderVitals(this.vitals);
     this.vitals.onDeath = () => this.onDeath();
+
+    // Compile the crack, particle and hand programs now rather than stalling
+    // the frame the first time a block is hit
+    this.breaker.crack.visible = true;
+    this.renderer.compile(this.scene, this.player.camera);
+    this.breaker.crack.visible = false;
+    this.hand.precompile(this.renderer);
   }
 
   initAudio() {
@@ -458,6 +479,8 @@ export default class Game {
   onMouseDown(event: MouseEvent) {
     if (!this.player.controls.isLocked || this.player.dead) return;
     if (event.button === 0) {
+      // Minecraft.startAttack swings even when nothing is hit
+      this.player.swing();
       this.breaker.start();
     } else if (event.button === 2) {
       this.placing = true;
@@ -482,6 +505,7 @@ export default class Game {
     )
       return;
     if (this.world.addBlock(target.x, target.y, target.z, id)) {
+      this.player.swing();
       this.player.hotbar.consumeSelected();
       this.refreshHotbar();
     }
@@ -526,10 +550,26 @@ export default class Game {
         (this.world.renderDistance + 0.5) * this.world.chunkSize.width;
       start = radius * 0.62;
       end = radius * 0.96;
+      this.sky.fogEnd = end;
     }
     this.world.materials.setFog(this.fogColor, start, end, cylindrical);
     this.particles.setLighting(this.sky.daylight, this.fogColor, start, end);
     this.renderer.setClearColor(this.fogColor);
+    this.hand.setLight(this.sky.daylight, this.skyVisibleAbovePlayer());
+  }
+
+  /** Whether nothing opaque sits above the eyes (rough stand-in for sky light) */
+  private skyVisibleAbovePlayer() {
+    const p = this.player.position;
+    const x = Math.floor(p.x);
+    const z = Math.floor(p.z);
+    for (let y = Math.floor(p.y) + 1; y < this.world.chunkSize.height; y++) {
+      const id = this.world.getBlock(x, y, z);
+      if (id !== undefined && id !== BlockID.Air && getBlockDef(id).opaque) {
+        return false;
+      }
+    }
+    return true;
   }
 
   // ------------------------------------------------------------------ loop
@@ -545,9 +585,11 @@ export default class Game {
     this.updateAtmosphere();
 
     if (this.world.initialLoadComplete) {
+      this.player.sprintAllowed = !this.survival || this.vitals.canSprint;
       this.physics.update(deltaTime, this.player, this.world);
       if (this.survival) this.vitals.update(deltaTime, this.player);
       this.updateInteraction(deltaTime);
+      this.hand.update(deltaTime, this.player);
     }
     this.world.update(this.player);
     this.particles.update(
@@ -555,7 +597,7 @@ export default class Game {
       this.player.camera,
       this.renderer.getPixelRatio()
     );
-    this.hud.update(this.vitals);
+    if (this.survival) this.hud.update(deltaTime, this.vitals);
     if (this.world.initialLoadComplete) {
       this.world.fluids.update(Math.min(deltaTime, 0.25));
       if (currentTime - this.lastSave > this.saveInterval * 1000) {
@@ -581,8 +623,34 @@ export default class Game {
 
     if (this.stats) this.stats.update();
 
-    this.renderer.render(this.scene, this.player.camera);
+    this.renderWorldAndHand();
 
     this.previousTime = currentTime;
+  }
+
+  /** World pass with the vanilla hurt roll, then the first-person hand on top */
+  private renderWorldAndHand() {
+    const camera = this.player.camera;
+    const roll = this.survival ? this.vitals.hurtRoll : 0;
+    const look = camera.quaternion.clone();
+    if (roll !== 0) {
+      camera.quaternion.multiply(
+        new THREE.Quaternion().setFromAxisAngle(
+          new THREE.Vector3(0, 0, 1),
+          roll
+        )
+      );
+    }
+    this.renderer.clear();
+    this.renderer.render(this.scene, camera);
+    camera.quaternion.copy(look);
+    if (this.world.initialLoadComplete) {
+      this.hand.render(
+        this.renderer,
+        this.player,
+        this.physics.accumulator / Physics.TICK,
+        roll
+      );
+    }
   }
 }

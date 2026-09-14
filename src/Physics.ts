@@ -94,6 +94,7 @@ export class Physics {
 
   private tick(player: Player, world: World) {
     player.beginTick();
+    player.tickSwing();
     this.sampleFluid(player, world, player.getBox());
     player.tickInput();
 
@@ -120,15 +121,20 @@ export class Physics {
     }
 
     player.tickSprint();
+    player.tickExhaustion();
     player.tickStepSounds(this.blockUnderneath(player, world));
   }
 
+  /** Vanilla `Player.jumpFromGround`: sprint jumps cost 0.2 exhaustion, others 0.05 */
   private jump(player: Player) {
     player.velocity.y = Physics.JUMP_VELOCITY;
     if (player.isSprinting) {
       const yaw = player.yaw;
       player.velocity.x -= Math.sin(yaw) * Physics.SPRINT_JUMP_BOOST;
       player.velocity.z -= Math.cos(yaw) * Physics.SPRINT_JUMP_BOOST;
+      player.onExhaustion(0.2);
+    } else {
+      player.onExhaustion(0.05);
     }
     player.jumpCooldown = Physics.JUMP_COOLDOWN;
   }

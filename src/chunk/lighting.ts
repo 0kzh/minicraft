@@ -6,9 +6,19 @@ import {
   ChunkNeighborhood,
   ChunkSize,
   neighborIndex,
+  NEIGHBORHOOD_CENTER,
 } from "./ChunkData";
 
 export const MAX_LIGHT = 15;
+
+/** Cells of the centre chunk changed since its last mesh, with their old ids */
+export type ChunkEdits = {
+  indices: Int32Array;
+  prevIds: Uint8Array;
+};
+
+/** Neighbour bitmask with every neighbour set */
+export const ALL_NEIGHBORS = 0x1ff & ~(1 << NEIGHBORHOOD_CENTER);
 
 const opacityTable = new Uint8Array(256);
 const emissionTable = new Uint8Array(256);
@@ -114,6 +124,54 @@ export class LitVolume {
   blockLight(x: number, y: number, z: number): number {
     if (!this.inBounds(x, y, z)) return 0;
     return this.light[this.index(x, y, z)] & 15;
+  }
+
+  /**
+   * Bitmask (over neighborIndex) of the neighbours whose meshes are affected
+   * by `edits`: those touching an edited border cell, and those whose cells'
+   * light differs from the same volume lit with the edits reverted.
+   */
+  affectedNeighbors(n: ChunkNeighborhood, edits: ChunkEdits): number {
+    const w = this.size.width;
+    let mask = 0;
+    const mark = (dx: number, dz: number) => {
+      if (dx !== 0 || dz !== 0) mask |= 1 << neighborIndex(dx, dz);
+    };
+
+    const center = n.chunks[NEIGHBORHOOD_CENTER] as Uint8Array;
+    const before = center.slice();
+    for (let k = 0; k < edits.indices.length; k++) {
+      const i = edits.indices[k];
+      before[i] = edits.prevIds[k];
+      const x = i % w;
+      const z = ((i - x) / w) % w;
+      const ex = x === 0 ? -1 : x === w - 1 ? 1 : 0;
+      const ez = z === 0 ? -1 : z === w - 1 ? 1 : 0;
+      mark(ex, 0);
+      mark(0, ez);
+      mark(ex, ez);
+    }
+    if (mask === ALL_NEIGHBORS) return mask;
+
+    const chunks = n.chunks.slice();
+    chunks[NEIGHBORHOOD_CENTER] = before;
+    const prev = new LitVolume(this.size, { chunks });
+
+    const { pw, pad, height, light } = this;
+    const other = prev.light;
+    for (let y = 0; y < height; y++) {
+      for (let z = 0; z < pw; z++) {
+        const dz = z < pad ? -1 : z >= pad + w ? 1 : 0;
+        const row = (y * pw + z) * pw;
+        for (let x = 0; x < pw; x++) {
+          const i = row + x;
+          if (light[i] === other[i]) continue;
+          const dx = x < pad ? -1 : x >= pad + w ? 1 : 0;
+          mark(dx, dz);
+        }
+      }
+    }
+    return mask;
   }
 
   private computeSkyLight() {

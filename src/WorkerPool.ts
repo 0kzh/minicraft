@@ -9,10 +9,15 @@ type PooledWorker = {
 
 /**
  * Pool of chunk workers. Jobs are dispatched to the least busy worker.
+ *
+ * One worker is reserved for interactive jobs (remeshing after a player
+ * edit) so they never queue behind bulk terrain generation; background jobs
+ * only fall back to it when the pool has a single worker.
  */
 export class WorkerPool {
   private workers: PooledWorker[] = [];
   private pending = 0;
+  private static readonly INTERACTIVE = 0;
 
   constructor(size = WorkerPool.defaultSize()) {
     for (let i = 0; i < size; i++) {
@@ -27,11 +32,12 @@ export class WorkerPool {
 
   static defaultSize() {
     const cores = navigator.hardwareConcurrency || 4;
-    return Math.max(1, Math.min(8, cores - 1));
+    return Math.max(2, Math.min(8, cores - 1));
   }
 
+  /** Number of workers available to background jobs */
   get size() {
-    return this.workers.length;
+    return Math.max(1, this.workers.length - 1);
   }
 
   /** Number of jobs currently in flight */
@@ -39,10 +45,17 @@ export class WorkerPool {
     return this.pending;
   }
 
-  async run<T>(job: (api: Remote<ChunkWorkerApi>) => Promise<T>): Promise<T> {
-    let worker = this.workers[0];
-    for (const w of this.workers) {
-      if (w.busy < worker.busy) worker = w;
+  async run<T>(
+    job: (api: Remote<ChunkWorkerApi>) => Promise<T>,
+    interactive = false
+  ): Promise<T> {
+    let worker = this.workers[WorkerPool.INTERACTIVE];
+    if (!interactive) {
+      const first = this.workers.length > 1 ? 1 : 0;
+      worker = this.workers[first];
+      for (let i = first; i < this.workers.length; i++) {
+        if (this.workers[i].busy < worker.busy) worker = this.workers[i];
+      }
     }
     worker.busy++;
     this.pending++;

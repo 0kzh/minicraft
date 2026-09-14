@@ -14,6 +14,9 @@ export type SavedStack = { id: number; count: number };
 /** Survival progress, kept even while playing the same world in creative */
 export type SavedSurvival = {
   health: number;
+  /** Optional for saves written before hunger existed */
+  food?: number;
+  saturation?: number;
   inventory: (SavedStack | null)[];
 };
 
