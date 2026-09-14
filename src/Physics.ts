@@ -5,51 +5,69 @@ import { fluidHeight, getBlockDef } from "./Block/blocks";
 import { Player } from "./Player";
 import { World } from "./World";
 
-type Candidate = {
-  block: BlockID;
-  x: number;
-  y: number;
-  z: number;
+/** Axis-aligned bounding box in world space */
+export type AABB = {
+  minX: number;
+  minY: number;
+  minZ: number;
+  maxX: number;
+  maxY: number;
+  maxZ: number;
 };
 
-type Collision = {
-  candidate: Candidate;
-  contactPoint: THREE.Vector3;
-  normal: THREE.Vector3;
-  overlap: number;
-};
+const EPSILON = 1e-7;
 
 const collisionMaterial = new THREE.MeshBasicMaterial({
   color: 0xff0000,
   transparent: true,
   opacity: 0.2,
 });
-const collisionGeometry = new THREE.BoxGeometry(1.001, 1.001, 1.001);
 
-const contactMaterial = new THREE.MeshBasicMaterial({
-  wireframe: true,
-  color: 0x00ff00,
-});
-const contactGeometry = new THREE.SphereGeometry(0.05, 6, 6);
-
+/**
+ * Minecraft-style player movement, integrated at a fixed 20 ticks per second
+ * with the vanilla per-tick constants (Java Edition `LivingEntity.travel`):
+ *
+ *   ground:  v += input * 0.1 (x1.3 sprint, x0.3 sneak); v *= 0.6 * 0.91
+ *   air:     v += input * 0.02;                          v *= 0.91
+ *   gravity: vy = (vy - 0.08) * 0.98;  jump vy = 0.42 (+0.2 forward when sprinting)
+ *   water:   v += input * 0.02; v *= 0.8; vy = vy * 0.8 - 0.005; swim up +0.04
+ *
+ * Movement is resolved per axis against block collision boxes with a 0.6
+ * block step-up, so the 0.6 x 1.8 player fits 1-wide gaps and walks over
+ * snow layers. The camera is interpolated between ticks for smooth rendering.
+ */
 export class Physics {
-  // Acceleration due to gravity
-  static GRAVITY = -32;
-  // Gravity while submerged, before drag
-  static FLUID_GRAVITY = -6;
-  // Velocity damping per second in fluids
-  static FLUID_DRAG = 3.5;
-  static FLUID_SINK_SPEED = -2.5;
-  // Upward kick when swimming against a block whose top is within reach,
-  // letting the player climb out of water (Minecraft's 0.3 blocks/tick)
-  static FLUID_CLIMB_SPEED = 7;
+  static TICK_RATE = 20;
+  static TICK = 1 / Physics.TICK_RATE;
+  /** Frame time cap so a stalled tab cannot fast-forward hundreds of ticks */
+  static MAX_FRAME_TIME = 0.25;
 
-  // Physics simulation rate
-  simulationRate = 250;
-  stepSize = 1 / this.simulationRate;
-  // Accumulator to keep track of leftover dt
+  static GRAVITY = 0.08;
+  static VERTICAL_DRAG = 0.98;
+  static AIR_FRICTION = 0.91;
+  static GROUND_SLIPPERINESS = 0.6;
+  static BASE_SPEED = 0.1;
+  static SPRINT_MULTIPLIER = 1.3;
+  static SNEAK_MULTIPLIER = 0.3;
+  static AIR_ACCELERATION = 0.02;
+  static SPRINT_AIR_ACCELERATION = 0.026;
+  static JUMP_VELOCITY = 0.42;
+  static SPRINT_JUMP_BOOST = 0.2;
+  /** Ticks between automatic jumps while holding space */
+  static JUMP_COOLDOWN = 10;
+  static STEP_HEIGHT = 0.6;
+
+  static FLUID_ACCELERATION = 0.02;
+  static WATER_FRICTION = 0.8;
+  static LAVA_FRICTION = 0.5;
+  static FLUID_GRAVITY = 0.005;
+  static SWIM_UP_ACCELERATION = 0.04;
+  /** Fluid depth above the feet needed to swim rather than jump */
+  static SWIM_DEPTH = 0.4;
+  /** Vertical kick when swimming into a ledge the player can climb */
+  static FLUID_CLIMB_VELOCITY = 0.3;
+
   accumulator = 0;
-
   helpers: THREE.Group;
 
   constructor(scene: THREE.Scene) {
@@ -58,251 +76,472 @@ export class Physics {
     scene.add(this.helpers);
   }
 
+  /** Advances the simulation by `dt` seconds in fixed ticks */
   update(dt: number, player: Player, world: World) {
-    this.accumulator += dt;
-    const blockUnderneath =
-      this.getBlockUnderneath(player, world) ?? BlockID.Air;
+    this.accumulator += Math.min(dt, Physics.MAX_FRAME_TIME);
+    while (this.accumulator >= Physics.TICK) {
+      this.tick(player, world);
+      this.accumulator -= Physics.TICK;
+    }
+    player.interpolate(this.accumulator / Physics.TICK);
+    player.update(dt, world);
+    if (this.helpers.visible) this.updateHelpers(player, world);
+  }
 
-    player.inFluid = this.isInFluid(player, world);
+  private tick(player: Player, world: World) {
+    player.beginTick();
+    this.sampleFluid(player, world, player.getBox());
+    player.tickInput();
 
-    while (this.accumulator >= this.stepSize) {
-      if (player.inFluid) {
-        player.velocity.y += Physics.FLUID_GRAVITY * this.stepSize;
-        player.velocity.y -=
-          player.velocity.y * Physics.FLUID_DRAG * this.stepSize;
-        if (player.velocity.y < Physics.FLUID_SINK_SPEED)
-          player.velocity.y = Physics.FLUID_SINK_SPEED;
-      } else {
-        player.velocity.y += Physics.GRAVITY * this.stepSize;
+    if (player.jumping) {
+      if (player.inFluid && player.fluidDepth > Physics.SWIM_DEPTH) {
+        player.velocity.y += Physics.SWIM_UP_ACCELERATION;
+      } else if (player.onGround && player.jumpCooldown === 0) {
+        this.jump(player);
       }
-      player.applyInputs(this.stepSize, blockUnderneath);
-      this.detectCollisions(player, world);
-      if (player.inFluid && player.horizontalCollision) {
-        this.climbOutOfFluid(player, world);
-      }
-      this.accumulator -= this.stepSize;
+    }
+    if (player.jumpCooldown > 0) player.jumpCooldown--;
+
+    const move = player.moveInput();
+    if (player.inFluid) {
+      this.travelInFluid(player, world, move);
+    } else {
+      this.travelOnLand(player, world, move);
     }
 
-    player.update(world);
+    player.tickSprint();
+    player.tickStepSounds(this.blockUnderneath(player, world));
+  }
+
+  private jump(player: Player) {
+    player.velocity.y = Physics.JUMP_VELOCITY;
+    if (player.isSprinting) {
+      const yaw = player.yaw;
+      player.velocity.x -= Math.sin(yaw) * Physics.SPRINT_JUMP_BOOST;
+      player.velocity.z -= Math.cos(yaw) * Physics.SPRINT_JUMP_BOOST;
+    }
+    player.jumpCooldown = Physics.JUMP_COOLDOWN;
+  }
+
+  private travelOnLand(player: Player, world: World, move: THREE.Vector2) {
+    const onGround = player.onGround;
+    let speed: number;
+    if (onGround) {
+      const slip = Physics.GROUND_SLIPPERINESS;
+      speed =
+        Physics.BASE_SPEED *
+        player.speedMultiplier() *
+        (0.21600002 / (slip * slip * slip));
+    } else {
+      speed = player.isSprinting
+        ? Physics.SPRINT_AIR_ACCELERATION
+        : Physics.AIR_ACCELERATION;
+    }
+    this.accelerate(player, move, speed);
+
+    this.move(player, world);
+
+    const v = player.velocity;
+    v.y = (v.y - Physics.GRAVITY) * Physics.VERTICAL_DRAG;
+    const friction = onGround
+      ? Physics.GROUND_SLIPPERINESS * Physics.AIR_FRICTION
+      : Physics.AIR_FRICTION;
+    v.x *= friction;
+    v.z *= friction;
+  }
+
+  private travelInFluid(player: Player, world: World, move: THREE.Vector2) {
+    const friction = player.inLava
+      ? Physics.LAVA_FRICTION
+      : Physics.WATER_FRICTION;
+    this.accelerate(player, move, Physics.FLUID_ACCELERATION);
+
+    const startY = player.pos.y;
+    this.move(player, world);
+
+    const v = player.velocity;
+    v.x *= friction;
+    v.z *= friction;
+    v.y = v.y * friction - Physics.FLUID_GRAVITY;
+
+    // Swimming into a ledge: hop up if the space a step above is clear
+    if (player.horizontalCollision) {
+      const box = player.getBox();
+      const rise = v.y - (player.pos.y - startY);
+      if (
+        this.isFree(world, offsetBox(box, v.x, rise + Physics.STEP_HEIGHT, v.z))
+      ) {
+        // At the surface, a full jump clears shores a block above the water
+        const nearSurface = player.fluidDepth < Physics.SWIM_DEPTH + 0.2;
+        const jumpClear =
+          nearSurface && this.isFree(world, offsetBox(box, v.x, rise + 1, v.z));
+        v.y = jumpClear
+          ? Math.max(v.y, Physics.JUMP_VELOCITY)
+          : Physics.FLUID_CLIMB_VELOCITY;
+      }
+    }
+  }
+
+  /** Adds camera-relative input scaled by `speed` to the velocity */
+  private accelerate(player: Player, move: THREE.Vector2, speed: number) {
+    let lenSq = move.lengthSq();
+    if (lenSq < 1e-7) return;
+    if (lenSq > 1) {
+      move.normalize();
+      lenSq = 1;
+    }
+    const yaw = player.yaw;
+    const sin = Math.sin(yaw);
+    const cos = Math.cos(yaw);
+    // Forward is -Z at yaw 0, strafe right is +X
+    player.velocity.x += (move.x * cos - move.y * sin) * speed;
+    player.velocity.z += (-move.x * sin - move.y * cos) * speed;
   }
 
   /**
-   * True when the player's feet or torso are inside water or lava, taking
-   * the liquid's surface height into account so shallow puddles don't swim.
+   * Moves the player by its velocity, resolving collisions per axis with
+   * step-up and sneak edge protection, and updates the contact flags.
    */
-  isInFluid(player: Player, world: World) {
-    const x = Math.floor(player.position.x);
-    const z = Math.floor(player.position.z);
-    const feet = player.position.y - player.height + 0.1;
-    const torso = player.position.y - player.height * 0.5;
-    return this.fluidAt(world, x, feet, z) || this.fluidAt(world, x, torso, z);
+  private move(player: Player, world: World) {
+    const v = player.velocity;
+    let dx = v.x;
+    const dy = v.y;
+    let dz = v.z;
+    const box = player.getBox();
+
+    if (player.isSneaking && player.onGround && dy <= 0) {
+      const backed = this.backOffFromEdge(world, box, dx, dz);
+      dx = backed.x;
+      dz = backed.y;
+    }
+
+    let result = this.collide(world, box, dx, dy, dz);
+    const wasOnGround = player.onGround || (dy !== result.dy && dy < 0);
+    const blockedHorizontally =
+      (dx !== 0 && dx !== result.dx) || (dz !== 0 && dz !== result.dz);
+
+    if (blockedHorizontally && wasOnGround) {
+      // Try the move again from up to STEP_HEIGHT higher, then settle back down
+      const step = Physics.STEP_HEIGHT;
+      let stepped = this.collide(world, box, dx, step, dz);
+      const up = this.collide(world, box, 0, step, 0);
+      if (up.dy < step) {
+        const across = this.collide(
+          world,
+          offsetBox(box, 0, up.dy, 0),
+          dx,
+          0,
+          dz
+        );
+        const candidate = { dx: across.dx, dy: up.dy, dz: across.dz };
+        if (horizontalDistSq(candidate) > horizontalDistSq(stepped)) {
+          stepped = candidate;
+        }
+      }
+      if (horizontalDistSq(stepped) > horizontalDistSq(result)) {
+        const settle = this.collide(
+          world,
+          offsetBox(box, stepped.dx, stepped.dy, stepped.dz),
+          0,
+          dy - stepped.dy,
+          0
+        );
+        result = {
+          dx: stepped.dx,
+          dy: stepped.dy + settle.dy,
+          dz: stepped.dz,
+        };
+      }
+    }
+
+    player.pos.x += result.dx;
+    player.pos.y += result.dy;
+    player.pos.z += result.dz;
+
+    player.horizontalCollision =
+      (dx !== 0 && Math.abs(dx - result.dx) > EPSILON) ||
+      (dz !== 0 && Math.abs(dz - result.dz) > EPSILON);
+    const verticalCollision = dy !== result.dy;
+    player.onGround = verticalCollision && dy < 0;
+
+    if (player.horizontalCollision) {
+      if (dx !== result.dx) v.x = 0;
+      if (dz !== result.dz) v.z = 0;
+    }
+    if (verticalCollision) v.y = 0;
   }
 
-  private fluidAt(world: World, x: number, y: number, z: number) {
-    const by = Math.floor(y);
-    const id = world.getBlock(x, by, z);
-    if (id === undefined) return false;
-    const def = getBlockDef(id);
-    if (!def.fluid) return false;
-    const above = world.getBlock(x, by + 1, z);
-    if (
-      above !== undefined &&
-      getBlockDef(above).fluidSource === def.fluidSource
-    )
-      return true;
-    return y - by < fluidHeight(def);
+  /** Shrinks horizontal motion while sneaking so the player stays on the ledge */
+  private backOffFromEdge(
+    world: World,
+    box: AABB,
+    dx: number,
+    dz: number
+  ): THREE.Vector2 {
+    const step = 0.05;
+    const supported = (x: number, z: number) =>
+      !this.isFree(world, offsetBox(box, x, -Physics.STEP_HEIGHT, z));
+    const shrink = (d: number) =>
+      Math.abs(d) < step ? 0 : d - Math.sign(d) * step;
+
+    while (dx !== 0 && !supported(dx, 0)) dx = shrink(dx);
+    while (dz !== 0 && !supported(0, dz)) dz = shrink(dz);
+    while (dx !== 0 && dz !== 0 && !supported(dx, dz)) {
+      dx = shrink(dx);
+      dz = shrink(dz);
+    }
+    return new THREE.Vector2(dx, dz);
   }
 
   /**
-   * Swimming into a block whose top is just above the water: hop up if the
-   * space one block higher is free, like Minecraft's liquid edge climb.
+   * Sweeps `box` by (dx, dy, dz) against block collision boxes, Y first then
+   * the dominant horizontal axis, returning the allowed displacement.
    */
-  private climbOutOfFluid(player: Player, world: World) {
-    if (player.input.lengthSq() === 0) return;
-    const feet = player.position.y - player.height;
-    const x = Math.floor(player.position.x);
-    const z = Math.floor(player.position.z);
-    const top = Math.floor(feet) + 1;
-    for (let y = top; y < top + Math.ceil(player.height); y++) {
-      if (world.isSolid(x, y, z)) return;
+  private collide(
+    world: World,
+    box: AABB,
+    dx: number,
+    dy: number,
+    dz: number
+  ): { dx: number; dy: number; dz: number } {
+    const boxes = this.collisionBoxes(world, sweptBounds(box, dx, dy, dz));
+    let b = box;
+    if (dy !== 0) {
+      dy = clipAxis(boxes, b, dy, 1);
+      b = offsetBox(b, 0, dy, 0);
     }
-    player.velocity.y = Math.max(player.velocity.y, Physics.FLUID_CLIMB_SPEED);
-  }
-
-  getBlockUnderneath(player: Player, world: World) {
-    return world.getBlock(
-      Math.floor(player.position.x),
-      Math.floor(player.position.y - player.height / 2 - 1),
-      Math.floor(player.position.z)
-    );
-  }
-
-  detectCollisions(player: Player, world: World) {
-    player.onGround = false;
-    player.horizontalCollision = false;
-    this.helpers.clear();
-
-    const candidates = this.broadPhase(player, world);
-    const collisions = this.narrowPhase(candidates, player);
-
-    if (collisions.length > 0) {
-      this.resolveCollisions(collisions, player);
+    const zFirst = Math.abs(dz) > Math.abs(dx);
+    if (zFirst && dz !== 0) {
+      dz = clipAxis(boxes, b, dz, 2);
+      b = offsetBox(b, 0, 0, dz);
     }
+    if (dx !== 0) {
+      dx = clipAxis(boxes, b, dx, 0);
+      b = offsetBox(b, dx, 0, 0);
+    }
+    if (!zFirst && dz !== 0) {
+      dz = clipAxis(boxes, b, dz, 2);
+    }
+    return { dx, dy, dz };
   }
 
-  broadPhase(player: Player, world: World): Candidate[] {
-    const candidates: Candidate[] = [];
-
-    // Get the block extents of the player
-    const minX = Math.floor(player.position.x - player.radius);
-    const maxX = Math.ceil(player.position.x + player.radius);
-    const minY = Math.floor(player.position.y - player.height);
-    const maxY = Math.ceil(player.position.y);
-    const minZ = Math.floor(player.position.z - player.radius);
-    const maxZ = Math.ceil(player.position.z + player.radius);
-
-    // Iterate over the player's AABB
-    for (let x = minX; x <= maxX; x++) {
-      for (let y = minY; y <= maxY; y++) {
-        for (let z = minZ; z <= maxZ; z++) {
-          // If the block is solid, add it to the list of candidates
-          if (world.isSolid(x, y, z)) {
-            const candidate: Candidate = {
-              block: world.getBlock(x, y, z) as BlockID,
-              x: x + 0.5,
-              y: y + 0.5,
-              z: z + 0.5,
-            };
-            candidates.push(candidate);
-            if (this.helpers.visible) this.addCollisionHelper(candidate);
+  /** Collision boxes of every solid block overlapping `bounds` */
+  private collisionBoxes(world: World, bounds: AABB): AABB[] {
+    const out: AABB[] = [];
+    const x0 = Math.floor(bounds.minX);
+    const x1 = Math.floor(bounds.maxX);
+    const y0 = Math.floor(bounds.minY);
+    const y1 = Math.floor(bounds.maxY);
+    const z0 = Math.floor(bounds.minZ);
+    const z1 = Math.floor(bounds.maxZ);
+    for (let y = y0; y <= y1; y++) {
+      for (let z = z0; z <= z1; z++) {
+        for (let x = x0; x <= x1; x++) {
+          const id = world.getBlock(x, y, z);
+          if (id === undefined) {
+            // Unloaded chunks are solid so the player never falls through
+            if (y >= 0 && y < world.chunkSize.height) {
+              out.push(unitBox(x, y, z));
+            }
+            continue;
           }
+          const def = getBlockDef(id);
+          if (def.passable) continue;
+          const [bx0, by0, bz0, bx1, by1, bz1] = def.box;
+          out.push({
+            minX: x + bx0,
+            minY: y + by0,
+            minZ: z + bz0,
+            maxX: x + bx1,
+            maxY: y + by1,
+            maxZ: z + bz1,
+          });
         }
       }
     }
-
-    return candidates;
+    return out;
   }
 
-  narrowPhase(candidates: Candidate[], player: Player): Collision[] {
-    const collisions: Collision[] = [];
-
-    for (const candidate of candidates) {
-      // Get the point of the block closest to the center of the player's bounding cylinder
-      const closestPoint = new THREE.Vector3(
-        Math.max(
-          candidate.x - 0.5,
-          Math.min(player.position.x, candidate.x + 0.5)
-        ),
-        Math.max(
-          candidate.y - 0.5,
-          Math.min(player.position.y - player.height / 2, candidate.y + 0.5)
-        ),
-        Math.max(
-          candidate.z - 0.5,
-          Math.min(player.position.z, candidate.z + 0.5)
-        )
-      );
-
-      // Get distance along each exist between closest point and center
-      const dx = closestPoint.x - player.position.x;
-      const dy = closestPoint.y - (player.position.y - player.height / 2);
-      const dz = closestPoint.z - player.position.z;
-
-      if (this.pointInPlayerBoundingCylinder(closestPoint, player)) {
-        const overlapY = player.height / 2 - Math.abs(dy);
-        const overlapXZ = player.radius - Math.sqrt(dx * dx + dz * dz);
-
-        // Compute the normal of the collision (pointing away from content point)
-        // As well as overlap between the point and the player's bounding cylinder
-        let normal: THREE.Vector3;
-        let overlap: number;
-        if (overlapY < overlapXZ) {
-          normal = new THREE.Vector3(0, -Math.sign(dy), 0);
-          overlap = overlapY;
-          player.onGround = true;
-        } else {
-          normal = new THREE.Vector3(-dx, 0, -dz).normalize();
-          overlap = overlapXZ;
-        }
-
-        collisions.push({
-          candidate,
-          contactPoint: closestPoint,
-          normal,
-          overlap,
-        });
-
-        if (this.helpers.visible) this.addContactPointerHelper(closestPoint);
-      }
-    }
-
-    return collisions;
-  }
-
-  pointInPlayerBoundingCylinder(p: THREE.Vector3, player: Player) {
-    const dx = p.x - player.position.x;
-    const dy = p.y - (player.position.y - player.height / 2);
-    const dz = p.z - player.position.z;
-    const r_sq = dx * dx + dz * dz;
-
-    // Check if contact point is inside the player's bounding cylinder
-    return (
-      Math.abs(dy) < player.height / 2 && r_sq < player.radius * player.radius
-    );
-  }
-
-  resolveCollisions(collisions: Collision[], player: Player) {
-    // Resolve collisions in order of smallest overlap to largest
-    collisions.sort((a, b) => a.overlap - b.overlap);
-
-    for (const collision of collisions) {
-      // re-check if contact player is inside the player's bounding cylinder
-      // since the player position is updated after each collision is resolved
-      if (!this.pointInPlayerBoundingCylinder(collision.contactPoint, player)) {
-        continue;
-      }
-
-      // Adjust position of player so that block and player are no longer overlapping
-      const deltaPosition = collision.normal.clone();
-      deltaPosition.multiplyScalar(collision.overlap);
-
-      // Don't apply vertical change if player is not on ground
-      if (!player.onGround && deltaPosition.y !== 0) {
-        deltaPosition.y = 0;
-      }
-      player.position.add(deltaPosition);
-
-      // If player is stuck underneath a block, boost him up
-      if (collision.normal.y < 0) {
-        player.velocity.y += 10;
-      }
-      if (collision.normal.y === 0) {
-        player.horizontalCollision = true;
-      }
-
-      // Get the magnitude of player's velocity along collision normal
-      const magnitude = player.worldVelocity.dot(collision.normal);
-      // remove that part of velocity from the player's velocity
-      const velocityAdj = collision.normal.clone().multiplyScalar(magnitude);
-      player.applyWorldDeltaVelocity(velocityAdj.negate());
-    }
-  }
-
-  // visualizes the block the player is colliding with
-  addCollisionHelper(candidate: Candidate) {
-    const blockMesh = new THREE.Mesh(collisionGeometry, collisionMaterial);
-    blockMesh.position.copy(
-      new THREE.Vector3(candidate.x, candidate.y, candidate.z)
-    );
-    this.helpers.add(blockMesh);
+  private isFree(world: World, box: AABB): boolean {
+    const boxes = this.collisionBoxes(world, box);
+    for (const b of boxes) if (intersects(b, box)) return false;
+    return true;
   }
 
   /**
-   * Visualizes the contact at the point 'p'
+   * Whether the player's box overlaps liquid and how deep the liquid surface
+   * sits above the feet (Minecraft's fluid height).
    */
-  addContactPointerHelper(p: THREE.Vector3) {
-    const contactMesh = new THREE.Mesh(contactGeometry, contactMaterial);
-    contactMesh.position.copy(new THREE.Vector3(p.x, p.y, p.z));
-    this.helpers.add(contactMesh);
+  private sampleFluid(player: Player, world: World, box: AABB) {
+    const shrunk = offsetBox(box, 0, 0, 0);
+    shrunk.minX += 0.001;
+    shrunk.minY += 0.001;
+    shrunk.minZ += 0.001;
+    shrunk.maxX -= 0.001;
+    shrunk.maxY -= 0.001;
+    shrunk.maxZ -= 0.001;
+
+    let depth = 0;
+    let lava = false;
+    let water = false;
+    for (let y = Math.floor(shrunk.minY); y <= Math.floor(shrunk.maxY); y++) {
+      for (let z = Math.floor(shrunk.minZ); z <= Math.floor(shrunk.maxZ); z++) {
+        for (
+          let x = Math.floor(shrunk.minX);
+          x <= Math.floor(shrunk.maxX);
+          x++
+        ) {
+          const id = world.getBlock(x, y, z);
+          if (id === undefined) continue;
+          const def = getBlockDef(id);
+          if (!def.fluid) continue;
+          const above = world.getBlock(x, y + 1, z);
+          const filled =
+            above !== undefined &&
+            getBlockDef(above).fluid &&
+            getBlockDef(above).fluidSource === def.fluidSource;
+          const surface = y + (filled ? 1 : fluidHeight(def));
+          if (surface < shrunk.minY) continue;
+          depth = Math.max(depth, surface - shrunk.minY);
+          if (def.fluidSource === BlockID.Lava) lava = true;
+          else water = true;
+        }
+      }
+    }
+    player.inFluid = water || lava;
+    player.inLava = lava;
+    player.fluidDepth = depth;
+
+    const eye = player.pos.y + player.eyeHeight;
+    const eyeBlock = world.getBlock(
+      Math.floor(player.pos.x),
+      Math.floor(eye),
+      Math.floor(player.pos.z)
+    );
+    if (eyeBlock !== undefined && getBlockDef(eyeBlock).fluid) {
+      const def = getBlockDef(eyeBlock);
+      const above = world.getBlock(
+        Math.floor(player.pos.x),
+        Math.floor(eye) + 1,
+        Math.floor(player.pos.z)
+      );
+      const filled = above !== undefined && getBlockDef(above).fluid;
+      const surface = Math.floor(eye) + (filled ? 1 : fluidHeight(def));
+      player.eyeSubmerged = eye < surface;
+    } else {
+      player.eyeSubmerged = false;
+    }
   }
+
+  /** The block the player stands on (for step sounds) */
+  private blockUnderneath(player: Player, world: World): BlockID {
+    const id = world.getBlock(
+      Math.floor(player.pos.x),
+      Math.floor(player.pos.y - 0.01),
+      Math.floor(player.pos.z)
+    );
+    return id ?? BlockID.Air;
+  }
+
+  /** Debug: highlights the blocks the player currently touches */
+  private updateHelpers(player: Player, world: World) {
+    this.helpers.clear();
+    const box = player.getBox();
+    const probe = offsetBox(box, 0, -0.05, 0);
+    probe.minX -= 0.05;
+    probe.minZ -= 0.05;
+    probe.maxX += 0.05;
+    probe.maxZ += 0.05;
+    for (const b of this.collisionBoxes(world, probe)) {
+      if (!intersects(b, probe)) continue;
+      const mesh = new THREE.Mesh(
+        new THREE.BoxGeometry(
+          b.maxX - b.minX + 0.002,
+          b.maxY - b.minY + 0.002,
+          b.maxZ - b.minZ + 0.002
+        ),
+        collisionMaterial
+      );
+      mesh.position.set(
+        (b.minX + b.maxX) / 2,
+        (b.minY + b.maxY) / 2,
+        (b.minZ + b.maxZ) / 2
+      );
+      this.helpers.add(mesh);
+    }
+  }
+}
+
+const horizontalDistSq = (d: { dx: number; dz: number }) =>
+  d.dx * d.dx + d.dz * d.dz;
+
+/** Largest |d| <= |delta| that moves `box` along `axis` without entering any of `boxes` */
+function clipAxis(boxes: AABB[], box: AABB, delta: number, axis: number) {
+  for (const b of boxes) {
+    if (
+      axis !== 0 &&
+      !(b.maxX > box.minX + EPSILON && b.minX < box.maxX - EPSILON)
+    )
+      continue;
+    if (
+      axis !== 1 &&
+      !(b.maxY > box.minY + EPSILON && b.minY < box.maxY - EPSILON)
+    )
+      continue;
+    if (
+      axis !== 2 &&
+      !(b.maxZ > box.minZ + EPSILON && b.minZ < box.maxZ - EPSILON)
+    )
+      continue;
+    const [bMin, bMax, min, max] =
+      axis === 0
+        ? [b.minX, b.maxX, box.minX, box.maxX]
+        : axis === 1
+        ? [b.minY, b.maxY, box.minY, box.maxY]
+        : [b.minZ, b.maxZ, box.minZ, box.maxZ];
+    if (delta > 0 && bMin >= max - EPSILON) {
+      delta = Math.min(delta, bMin - max);
+    } else if (delta < 0 && bMax <= min + EPSILON) {
+      delta = Math.max(delta, bMax - min);
+    }
+    if (Math.abs(delta) < EPSILON) return 0;
+  }
+  return delta;
+}
+
+export function offsetBox(b: AABB, dx: number, dy: number, dz: number): AABB {
+  return {
+    minX: b.minX + dx,
+    minY: b.minY + dy,
+    minZ: b.minZ + dz,
+    maxX: b.maxX + dx,
+    maxY: b.maxY + dy,
+    maxZ: b.maxZ + dz,
+  };
+}
+
+function sweptBounds(b: AABB, dx: number, dy: number, dz: number): AABB {
+  return {
+    minX: Math.min(b.minX, b.minX + dx),
+    minY: Math.min(b.minY, b.minY + dy),
+    minZ: Math.min(b.minZ, b.minZ + dz),
+    maxX: Math.max(b.maxX, b.maxX + dx),
+    maxY: Math.max(b.maxY, b.maxY + dy),
+    maxZ: Math.max(b.maxZ, b.maxZ + dz),
+  };
+}
+
+function unitBox(x: number, y: number, z: number): AABB {
+  return { minX: x, minY: y, minZ: z, maxX: x + 1, maxY: y + 1, maxZ: z + 1 };
+}
+
+export function intersects(a: AABB, b: AABB): boolean {
+  return (
+    a.minX < b.maxX - EPSILON &&
+    a.maxX > b.minX + EPSILON &&
+    a.minY < b.maxY - EPSILON &&
+    a.maxY > b.minY + EPSILON &&
+    a.minZ < b.maxZ - EPSILON &&
+    a.maxZ > b.minZ + EPSILON
+  );
 }

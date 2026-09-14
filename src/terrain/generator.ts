@@ -465,7 +465,11 @@ export function generateChunkData(
       if (lx < 0 || lx >= w || lz < 0 || lz >= w) continue;
       const plant = hashUnit(params.seed, wx, wz, 12);
       const veg = params.vegetation.density;
-      if (surface === BlockID.Sand) {
+      if (def.snowy) {
+        // Cold biomes are dusted with a thin snow layer rather than full blocks
+        if (at(lx, y + 1, lz) === BlockID.Air)
+          put(lx, y + 1, lz, BlockID.SnowLayer);
+      } else if (surface === BlockID.Sand) {
         if (plant < def.cactusChance * veg) {
           const h = 1 + Math.floor(hashUnit(params.seed, wx, wz, 13) * 3);
           for (let i = 0; i < h; i++) put(lx, y + 1 + i, lz, BlockID.Cactus);
@@ -510,10 +514,7 @@ function surfaceBlock(col: Column, sea: number): BlockID {
     // Grass clings to the gentler lower slopes
     if (col.height < 98 && col.surface > 0.25) top = BlockID.Grass;
   }
-  if (def.snowy) {
-    if (top === BlockID.Grass) top = BlockID.SnowGrass;
-    else if (top === BlockID.Stone) top = BlockID.Snow;
-  }
+  if (def.snowy && top === BlockID.Grass) top = BlockID.SnowGrass;
   return top;
 }
 

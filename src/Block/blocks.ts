@@ -52,7 +52,16 @@ export enum RenderGeometry {
   Cross,
   /** Liquid with per-corner surface heights derived from neighbouring levels */
   Fluid,
+  /** Axis-aligned box smaller than the cell (snow layer, cactus) */
+  Box,
 }
+
+/** Block-space AABB: minX, minY, minZ, maxX, maxY, maxZ */
+export type BlockBox = [number, number, number, number, number, number];
+
+export const FULL_BOX: BlockBox = [0, 0, 0, 1, 1, 1];
+
+export const SNOW_LAYER_HEIGHT = 2 / 16;
 
 export enum RenderLayer {
   Opaque,
@@ -77,6 +86,8 @@ export type BlockDef = {
   opaque: boolean;
   /** Player and physics can pass through */
   passable: boolean;
+  /** Collision and render bounds for Cube/Box geometry */
+  box: BlockBox;
   /** Liquid: slows and buoys the player, tints the view when submerged */
   fluid: boolean;
   /** Source block id of this liquid (Water/Lava); same for every level */
@@ -131,6 +142,7 @@ const cube = (
   layer: RenderLayer.Opaque,
   opaque: true,
   passable: false,
+  box: FULL_BOX,
   fluid: false,
   fluidSource: id,
   fluidLevel: 0,
@@ -144,6 +156,25 @@ const cube = (
   sound,
   ...overrides,
 });
+
+/** A solid block occupying only part of its cell, rendered with alpha cutout */
+const box = (
+  id: BlockID,
+  name: string,
+  spec: FaceSpec,
+  bounds: BlockBox,
+  sound: SoundGroup,
+  overrides: Partial<BlockDef> = {}
+): BlockDef =>
+  cube(id, name, spec, "", sound, {
+    geometry: RenderGeometry.Box,
+    layer: RenderLayer.Cutout,
+    opaque: false,
+    box: bounds,
+    lightOpacity: 0,
+    cullSelf: false,
+    ...overrides,
+  });
 
 const leaves = (
   id: BlockID,
@@ -207,6 +238,7 @@ const cross = (
   layer: RenderLayer.Cutout,
   opaque: false,
   passable: true,
+  box: FULL_BOX,
   fluid: false,
   fluidSource: id,
   fluidLevel: 0,
@@ -228,6 +260,7 @@ const defs: BlockDef[] = [
     layer: RenderLayer.Opaque,
     opaque: false,
     passable: true,
+    box: FULL_BOX,
     fluid: false,
     fluidSource: BlockID.Air,
     fluidLevel: 0,
@@ -307,12 +340,20 @@ const defs: BlockDef[] = [
     "wood"
   ),
   leaves(BlockID.BirchLeaves, "birch_leaves", "birch_leaves", ""),
-  cube(
+  box(
     BlockID.Cactus,
     "cactus",
     { side: "cactus_side", top: "cactus_top" },
-    "",
-    "grass"
+    [1 / 16, 0, 1 / 16, 15 / 16, 1, 15 / 16],
+    "grass",
+    { cullSelf: true }
+  ),
+  box(
+    BlockID.SnowLayer,
+    "snow_layer",
+    "snow",
+    [0, 0, 0, 1, SNOW_LAYER_HEIGHT, 1],
+    "snow"
   ),
   cross(BlockID.DeadBush, "dead_bush", "dead_bush", ""),
   cube(BlockID.GoldOre, "gold_ore", "gold_ore", "", "stone"),

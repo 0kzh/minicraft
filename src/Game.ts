@@ -1,10 +1,8 @@
-import TWEEN from "@tweenjs/tween.js";
 import { Howl, Howler } from "howler";
 import * as THREE from "three";
 import Stats from "three/examples/jsm/libs/stats.module";
 
 import audioManager from "./audio/AudioManager";
-import { BlockID } from "./Block";
 import { getBlockDef } from "./Block/blocks";
 import { buildBlockIcons, loadBlockTextures } from "./Block/textures";
 import { ChunkMaterials } from "./chunk/ChunkMaterial";
@@ -333,14 +331,13 @@ export default class Game {
         this.world.removeBlock(x, y, z);
       } else if (event.button === 2 && this.player.blockPlacementCoords) {
         if (this.player.activeBlockId != null) {
-          const playerPos = new THREE.Vector3(
-            Math.floor(this.player.position.x),
-            Math.floor(this.player.position.y) - 1,
-            Math.floor(this.player.position.z)
-          );
-          const blockPos = this.player.blockPlacementCoords.clone();
-
-          if (playerPos.distanceTo(blockPos) <= this.player.radius * 2) return;
+          const blockPos = this.player.blockPlacementCoords;
+          const def = getBlockDef(this.player.activeBlockId);
+          if (
+            !def.passable &&
+            this.player.intersectsBlock(blockPos.x, blockPos.y, blockPos.z)
+          )
+            return;
 
           this.world.addBlock(
             blockPos.x,
@@ -468,15 +465,8 @@ export default class Game {
   private updateFog(skyColor: THREE.Color) {
     const fog = this.scene.fog;
     if (!(fog instanceof THREE.Fog)) return;
-    const eye = this.player.camera.position;
-    const eyeBlock = this.world.getBlock(
-      Math.floor(eye.x),
-      Math.floor(eye.y),
-      Math.floor(eye.z)
-    );
-    const submerged = eyeBlock !== undefined && getBlockDef(eyeBlock).fluid;
-    if (submerged) {
-      const lava = eyeBlock === BlockID.Lava;
+    if (this.player.eyeSubmerged) {
+      const lava = this.player.inLava;
       fog.color.set(lava ? 0x7a1e00 : 0x0a2a55);
       fog.near = lava ? 0 : 1;
       fog.far = lava ? 4 : 22;
@@ -537,8 +527,6 @@ export default class Game {
     }
 
     if (this.stats) this.stats.update();
-
-    TWEEN.update();
 
     this.renderer.render(this.scene, this.player.camera);
 

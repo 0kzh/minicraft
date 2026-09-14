@@ -1,4 +1,5 @@
 import {
+  BlockBox,
   BlockDef,
   fluidHeight,
   getBlockDef,
@@ -17,7 +18,7 @@ import { LitVolume, MAX_LIGHT } from "./lighting";
 /**
  * Vertex layout for chunk meshes (see ChunkMaterial):
  *  position  vec3   float32  block-space position within the chunk
- *  uv        vec2   uint8    texture coordinates in tiles (repeat wrapping)
+ *  uv        vec2   uint16   texture coordinates in 1/UV_SCALE tiles (repeat wrapping)
  *  layer     float  uint8    texture array layer
  *  flags     float  uint8    bits 0-2 face index (+X,-X,+Y,-Y,+Z,-Z), bit 3 emissive,
  *                            bits 4-5 ambient occlusion (0 darkest .. 3 open)
@@ -25,7 +26,7 @@ import { LitVolume, MAX_LIGHT } from "./lighting";
  */
 export type MeshBuffers = {
   positions: Float32Array;
-  uvs: Uint8Array;
+  uvs: Uint16Array;
   layers: Uint8Array;
   flags: Uint8Array;
   lights: Uint8Array;
@@ -50,6 +51,9 @@ export const FACE_NEG_Z = 5;
 const EMISSIVE_FLAG = 8;
 const AO_SHIFT = 4;
 
+/** UV attribute units per texture tile; the shader divides by this */
+export const UV_SCALE = 16;
+
 /** Scales a 0-15 light level to a normalized uint8 */
 const LIGHT_SCALE = 255 / MAX_LIGHT;
 
@@ -68,7 +72,7 @@ const newShade = (): CornerShade => ({
 
 class GeometryBuilder {
   positions = new Float32Array(3 * 1024);
-  uvs = new Uint8Array(2 * 1024);
+  uvs = new Uint16Array(2 * 1024);
   layers = new Uint8Array(1024);
   flags = new Uint8Array(1024);
   lights = new Uint8Array(2 * 1024);
@@ -117,8 +121,8 @@ class GeometryBuilder {
       this.positions[vi * 3] = corners[i][0];
       this.positions[vi * 3 + 1] = corners[i][1];
       this.positions[vi * 3 + 2] = corners[i][2];
-      this.uvs[vi * 2] = uvs[i][0];
-      this.uvs[vi * 2 + 1] = uvs[i][1];
+      this.uvs[vi * 2] = Math.round(uvs[i][0] * UV_SCALE);
+      this.uvs[vi * 2 + 1] = Math.round(uvs[i][1] * UV_SCALE);
       this.layers[vi] = layer;
       this.flags[vi] =
         face | (emissive ? EMISSIVE_FLAG : 0) | (shade.ao[i] << AO_SHIFT);
@@ -161,7 +165,7 @@ class GeometryBuilder {
   }
 }
 
-function grow<T extends Float32Array | Uint8Array | Uint32Array>(
+function grow<T extends Float32Array | Uint8Array | Uint16Array | Uint32Array>(
   arr: T,
   capacity: number
 ): T {
@@ -285,6 +289,7 @@ export function meshChunk(size: ChunkSize, n: ChunkNeighborhood): ChunkMesh {
   const data = n.chunks[NEIGHBORHOOD_CENTER] as Uint8Array;
   meshCubes(size, vol, builders);
   meshCrosses(size, data, vol, builders);
+  meshBoxes(size, data, vol, builders);
   meshFluids(size, data, vol, builders);
 
   return {
@@ -564,6 +569,148 @@ function meshCrosses(
           FACE_POS_Y,
           def.emissive
         );
+      }
+    }
+  }
+}
+
+/**
+ * Face corners of an AABB [min, max] for face `face`, wound counter-clockwise
+ * seen from outside, paired with the UVs of each corner. Tangent axes map to
+ * texture s/t the same way `meshCubes` does so partial blocks show the
+ * matching crop of their texture.
+ */
+function boxFace(
+  face: number,
+  b: BlockBox,
+  ox: number,
+  oy: number,
+  oz: number
+): { corners: number[][]; uvs: number[][] } {
+  const [x0, y0, z0, x1, y1, z1] = b;
+  const p = (x: number, y: number, z: number) => [ox + x, oy + y, oz + z];
+  switch (face) {
+    case FACE_POS_X:
+      return {
+        corners: [p(x1, y0, z1), p(x1, y0, z0), p(x1, y1, z0), p(x1, y1, z1)],
+        uvs: [
+          [z1, y0],
+          [z0, y0],
+          [z0, y1],
+          [z1, y1],
+        ],
+      };
+    case FACE_NEG_X:
+      return {
+        corners: [p(x0, y0, z0), p(x0, y0, z1), p(x0, y1, z1), p(x0, y1, z0)],
+        uvs: [
+          [z0, y0],
+          [z1, y0],
+          [z1, y1],
+          [z0, y1],
+        ],
+      };
+    case FACE_POS_Y:
+      return {
+        corners: [p(x0, y1, z0), p(x0, y1, z1), p(x1, y1, z1), p(x1, y1, z0)],
+        uvs: [
+          [x0, z0],
+          [x0, z1],
+          [x1, z1],
+          [x1, z0],
+        ],
+      };
+    case FACE_NEG_Y:
+      return {
+        corners: [p(x0, y0, z0), p(x1, y0, z0), p(x1, y0, z1), p(x0, y0, z1)],
+        uvs: [
+          [x0, z0],
+          [x1, z0],
+          [x1, z1],
+          [x0, z1],
+        ],
+      };
+    case FACE_POS_Z:
+      return {
+        corners: [p(x0, y0, z1), p(x1, y0, z1), p(x1, y1, z1), p(x0, y1, z1)],
+        uvs: [
+          [x0, y0],
+          [x1, y0],
+          [x1, y1],
+          [x0, y1],
+        ],
+      };
+    default:
+      return {
+        corners: [p(x1, y0, z0), p(x0, y0, z0), p(x0, y1, z0), p(x1, y1, z0)],
+        uvs: [
+          [x1, y0],
+          [x0, y0],
+          [x0, y1],
+          [x1, y1],
+        ],
+      };
+  }
+}
+
+/** Outward normal of each face */
+const FACE_NORMALS: [number, number, number][] = [
+  [1, 0, 0],
+  [-1, 0, 0],
+  [0, 1, 0],
+  [0, -1, 0],
+  [0, 0, 1],
+  [0, 0, -1],
+];
+
+/**
+ * Blocks smaller than their cell (snow layers, cactus): six unmerged faces at
+ * the block's box. A face flush with the cell boundary is culled like a cube
+ * face; inset faces are always drawn and lit from the block's own cell.
+ */
+function meshBoxes(
+  size: ChunkSize,
+  data: Uint8Array,
+  vol: LitVolume,
+  builders: Record<RenderLayer, GeometryBuilder>
+) {
+  const w = size.width;
+  const shade = newShade();
+  for (let y = 0; y < size.height; y++) {
+    for (let z = 0; z < w; z++) {
+      for (let x = 0; x < w; x++) {
+        const def = getBlockDef(data[blockIndex(size, x, y, z)]);
+        if (def.geometry !== RenderGeometry.Box) continue;
+        const b = def.box;
+        const builder = builders[def.layer];
+
+        for (let face = 0; face < 6; face++) {
+          const [nx, ny, nz] = FACE_NORMALS[face];
+          const axis = face >> 1;
+          const positive = (face & 1) === 0;
+          const flush = positive ? b[axis + 3] >= 1 : b[axis] <= 0;
+          let lx = x;
+          let ly = y;
+          let lz = z;
+          if (flush) {
+            lx += nx;
+            ly += ny;
+            lz += nz;
+            if (occludes(getBlockDef(vol.get(lx, ly, lz)), def)) continue;
+          }
+          shade.sky.fill(vol.skyLight(lx, ly, lz));
+          shade.block.fill(vol.blockLight(lx, ly, lz));
+          shade.ao.fill(3);
+          const { corners, uvs } = boxFace(face, b, x, y, z);
+          builder.quad(
+            corners,
+            uvs,
+            shade,
+            def.faces[face],
+            face,
+            def.emissive
+          );
+        }
       }
     }
   }

@@ -2,6 +2,8 @@ import * as THREE from "three";
 
 import { BlockTextures } from "../Block/textures";
 
+import { UV_SCALE } from "./mesher";
+
 /** Max animated texture layers the shader cycles */
 const MAX_ANIMATIONS = 4;
 
@@ -26,7 +28,7 @@ const vertexShader = /* glsl */ `
   const float FACE_SHADE[6] = float[6](0.6, 0.6, 1.0, 0.5, 0.8, 0.8);
 
   void main() {
-    vUv = uv;
+    vUv = uv / UV_SCALE;
     vLayer = aLayer;
     for (int i = 0; i < MAX_ANIMATIONS; i++) {
       if (uAnim[i].z > 0.0 && abs(aLayer - uAnim[i].x) < 0.5) {
@@ -150,6 +152,7 @@ export class ChunkMaterials {
         ]),
         defines: {
           MAX_ANIMATIONS,
+          UV_SCALE: UV_SCALE.toFixed(1),
           ...(variant === "cutout"
             ? { CUTOUT: "" }
             : variant === "translucent"

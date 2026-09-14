@@ -116,8 +116,7 @@ export class World extends THREE.Group implements FluidWorld {
     this.lastCenter = null;
     this.restorePosition = null;
     this.spawnPoint.set(spawn.x, 0, spawn.z);
-    player.position.set(spawn.x, this.chunkSize.height + 10, spawn.z);
-    player.velocity.set(0, 0, 0);
+    player.teleport(spawn.x, this.chunkSize.height + 10, spawn.z);
     this.initialLoadComplete = false;
     this.setLoadingScreenVisible(true);
     this.update(player);
@@ -134,8 +133,7 @@ export class World extends THREE.Group implements FluidWorld {
   restore(player: Player, position: THREE.Vector3) {
     this.restorePosition = position.clone();
     this.spawnPoint.set(position.x, 0, position.z);
-    player.position.copy(position);
-    player.velocity.set(0, 0, 0);
+    player.teleport(position.x, position.y, position.z);
   }
 
   getChunkKey(x: number, z: number) {
@@ -237,12 +235,12 @@ export class World extends THREE.Group implements FluidWorld {
     this.setLoadingScreenVisible(false);
 
     if (this.restorePosition) {
-      player.position.copy(this.restorePosition);
+      const p = this.restorePosition;
+      player.teleport(p.x, p.y, p.z);
     } else {
       const spawn = this.findSpawn(this.spawnPoint);
-      player.position.set(spawn.x, spawn.y + 10, spawn.z);
+      player.teleport(spawn.x, spawn.y + 10, spawn.z);
     }
-    player.velocity.set(0, 0, 0);
     this.onInitialLoad?.();
   }
 
@@ -462,8 +460,7 @@ export class World extends THREE.Group implements FluidWorld {
     if (
       aboveDef &&
       above !== BlockID.Air &&
-      aboveDef.passable &&
-      !aboveDef.fluid
+      ((aboveDef.passable && !aboveDef.fluid) || above === BlockID.SnowLayer)
     ) {
       this.removeBlock(x, y + 1, z);
     }
@@ -481,14 +478,6 @@ export class World extends THREE.Group implements FluidWorld {
     const chunk = this.getChunk(coords.chunk.x, coords.chunk.z);
     if (!chunk?.loaded) return undefined;
     return chunk.getBlock(coords.block.x, coords.block.y, coords.block.z);
-  }
-
-  /**
-   * True if the block at world (x, y, z) blocks movement
-   */
-  isSolid(x: number, y: number, z: number): boolean {
-    const id = this.getBlock(x, y, z);
-    return id !== undefined && !getBlockDef(id).passable;
   }
 
   /**
