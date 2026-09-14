@@ -7,7 +7,8 @@ import { LineMaterial } from "three/examples/jsm/lines/LineMaterial.js";
 
 import audioManager from "./audio/AudioManager";
 import { BlockID } from "./Block";
-import { BlockFactory } from "./Block/BlockFactory";
+import { getBlockDef } from "./Block/blocks";
+import { raycastVoxels } from "./chunk/raycast";
 import { World } from "./World";
 
 function cuboid(width: number, height: number, depth: number) {
@@ -48,7 +49,7 @@ const selectionMaterial = new LineMaterial({
 });
 const selectionLineGeometry = new LineGeometry();
 selectionLineGeometry.setPositions(cuboid(1.001, 1.001, 1.001));
-const CENTER_SCREEN = new THREE.Vector2(0, 0);
+const REACH = 5;
 
 export class Player {
   height = 1.75;
@@ -86,14 +87,10 @@ export class Player {
   );
   selectionHelper = new Line2(selectionLineGeometry, selectionMaterial);
   controls = new PointerLockControls(this.camera, document.body);
-  raycaster = new THREE.Raycaster(
-    new THREE.Vector3(),
-    new THREE.Vector3(),
-    0,
-    5
-  );
+  #lookDirection = new THREE.Vector3();
+  /** Integer world coordinates of the targeted block */
   selectedCoords: THREE.Vector3 | null = null;
-  selectedBlockSize: THREE.Vector3 | null = null;
+  /** Integer world coordinates of the block that would be placed */
   blockPlacementCoords: THREE.Vector3 | null = null;
 
   toolbar: (BlockID | null)[] = [
@@ -176,22 +173,8 @@ export class Player {
   }
 
   async playWalkSound(blockUnderneath: BlockID) {
-    switch (blockUnderneath) {
-      case BlockID.Grass:
-      case BlockID.Dirt:
-      case BlockID.Leaves:
-        audioManager.play("step.grass");
-        break;
-      case BlockID.OakLog:
-        audioManager.play("step.wood");
-        break;
-      case BlockID.Stone:
-      case BlockID.CoalOre:
-      case BlockID.IronOre:
-      case BlockID.Bedrock:
-        audioManager.play("step.stone");
-        break;
-    }
+    if (blockUnderneath === BlockID.Air) return;
+    audioManager.play(`step.${getBlockDef(blockUnderneath).sound}`);
   }
 
   update(world: World) {
@@ -220,57 +203,36 @@ export class Player {
   }
 
   /**
-   * Updates the raycaster used for block selection
+   * Steps a ray from the camera through the voxel grid to find the targeted block
    */
   updateRaycaster(world: World) {
-    this.raycaster.setFromCamera(CENTER_SCREEN, this.camera);
-    const intersections = this.raycaster.intersectObjects(world.children, true);
-
-    if (intersections.length > 0) {
-      const intersection = intersections[0];
-
-      // Get the chunk associated with the seclected block
-      const chunk = intersection.object.parent;
-
-      if (intersection.instanceId == null || !chunk) {
-        this.selectionHelper.visible = false;
-        return;
+    this.camera.getWorldDirection(this.#lookDirection);
+    const hit = raycastVoxels(
+      this.position,
+      this.#lookDirection,
+      REACH,
+      (x, y, z) => {
+        const id = world.getBlock(x, y, z);
+        return id !== undefined && id !== BlockID.Air;
       }
+    );
 
-      // Get the transformation matrix for the selected block
-      const blockMatrix = new THREE.Matrix4();
-      (intersection.object as THREE.InstancedMesh).getMatrixAt(
-        intersection.instanceId,
-        blockMatrix
-      );
-
-      // Undo rotation from block matrix
-      const rotationMatrix = new THREE.Matrix4().extractRotation(blockMatrix);
-      const inverseRotationMatrix = rotationMatrix.invert();
-      blockMatrix.multiply(inverseRotationMatrix);
-
-      // Set the selected coordinates to origin of chunk
-      // Then apply transformation matrix of block to get block coords
-      this.selectedCoords = chunk.position.clone();
-      this.selectedCoords.applyMatrix4(blockMatrix);
-
-      // Get the bounding box of the selected block
-      const boundingBox = new THREE.Box3().setFromObject(intersection.object);
-      this.selectedBlockSize = boundingBox.getSize(new THREE.Vector3());
-
-      if (this.activeBlockId !== BlockID.Air && intersection.normal) {
-        // Update block placement coords to be 1 block over in the direction of the normal
-        this.blockPlacementCoords = this.selectedCoords
-          .clone()
-          .add(intersection.normal);
-      }
-
-      this.selectionHelper.position.copy(this.selectedCoords);
-      this.selectionHelper.visible = true;
-    } else {
+    if (!hit) {
       this.selectedCoords = null;
+      this.blockPlacementCoords = null;
       this.selectionHelper.visible = false;
+      return;
     }
+
+    this.selectedCoords = new THREE.Vector3(hit.x, hit.y, hit.z);
+    this.blockPlacementCoords = new THREE.Vector3(
+      hit.x + hit.normal.x,
+      hit.y + hit.normal.y,
+      hit.z + hit.normal.z
+    );
+
+    this.selectionHelper.position.set(hit.x + 0.5, hit.y + 0.5, hit.z + 0.5);
+    this.selectionHelper.visible = true;
   }
 
   /**
@@ -283,7 +245,7 @@ export class Player {
         const blockId = this.toolbar[i - 1];
         if (blockId != null && blockId !== BlockID.Air) {
           slot.style.backgroundImage = `url('${
-            BlockFactory.getBlock(blockId).uiTexture
+            getBlockDef(blockId).uiTexture
           }')`;
         }
       }

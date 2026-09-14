@@ -5,6 +5,8 @@ import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import Stats from "three/examples/jsm/libs/stats.module";
 
 import audioManager from "./audio/AudioManager";
+import { loadBlockTextureArray } from "./Block/textures";
+import { ChunkMaterials } from "./chunk/ChunkMaterial";
 import { createUI } from "./GUI";
 import { Physics } from "./Physics";
 import { Player } from "./Player";
@@ -53,7 +55,6 @@ export default class Game {
   private sky!: THREE.Mesh<THREE.BufferGeometry, THREE.ShaderMaterial>;
   private sun!: THREE.DirectionalLight;
   private sunHelper!: THREE.DirectionalLightHelper;
-  private shadowHelper!: THREE.CameraHelper;
   private world!: World;
   private player!: Player;
   private physics!: Physics;
@@ -75,12 +76,13 @@ export default class Game {
     const mainMenu = document.getElementById("main-menu");
     const loadingScreen = document.getElementById("loading");
     const startGameButton = document.getElementById("start-game");
-    startGameButton?.addEventListener("click", () => {
+    startGameButton?.addEventListener("click", async () => {
       if (mainMenu) mainMenu.style.display = "none";
       if (loadingScreen) loadingScreen.style.display = "block";
       audioManager.play("gui.button.press");
 
-      this.initScene();
+      const atlas = await loadBlockTextureArray();
+      this.initScene(new ChunkMaterials(atlas));
       this.initStats();
       this.initListeners();
       this.initAudio();
@@ -104,7 +106,7 @@ export default class Game {
     document.body.appendChild(this.stats.dom);
   }
 
-  initScene() {
+  initScene(chunkMaterials: ChunkMaterials) {
     this.scene = new THREE.Scene();
 
     this.orbitCamera = new THREE.PerspectiveCamera(
@@ -114,8 +116,6 @@ export default class Game {
     this.orbitCamera.position.set(-32, 64, -32);
 
     this.renderer = new THREE.WebGLRenderer();
-    this.renderer.shadowMap.enabled = true;
-    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
     this.renderer.setPixelRatio(window.devicePixelRatio);
     this.renderer.setSize(window.innerWidth, window.innerHeight);
@@ -153,19 +153,7 @@ export default class Game {
     this.scene.fog.color.copy(uniforms.bottomColor.value);
 
     this.sun = new THREE.DirectionalLight();
-    // this.sun.position.set(50, 50, 50);
     this.sun.intensity = 1.5;
-    this.sun.castShadow = true;
-
-    // Set the size of the sun's shadow box
-    this.sun.shadow.camera.left = -80;
-    this.sun.shadow.camera.right = 80;
-    this.sun.shadow.camera.top = 80;
-    this.sun.shadow.camera.bottom = -80;
-    this.sun.shadow.camera.near = 0.1;
-    this.sun.shadow.camera.far = 600;
-    this.sun.shadow.bias = -0.005;
-    this.sun.shadow.mapSize = new THREE.Vector2(512, 512);
 
     this.scene.add(this.sun);
     this.scene.add(this.sun.target);
@@ -173,15 +161,11 @@ export default class Game {
     this.sunHelper.visible = false;
     this.scene.add(this.sunHelper);
 
-    this.shadowHelper = new THREE.CameraHelper(this.sun.shadow.camera);
-    this.shadowHelper.visible = false;
-    this.scene.add(this.shadowHelper);
-
     const ambient = new THREE.AmbientLight();
     ambient.intensity = 0.2;
     this.scene.add(ambient);
 
-    this.world = new World(0, this.scene);
+    this.world = new World(0, this.scene, chunkMaterials);
     this.scene.add(this.world);
 
     this.player = new Player(this.scene);
@@ -194,10 +178,8 @@ export default class Game {
       this.player,
       this.physics,
       this.scene,
-      this.renderer,
       this.sunSettings,
-      this.sunHelper,
-      this.shadowHelper
+      this.sunHelper
     );
 
     this.draw();
@@ -215,24 +197,16 @@ export default class Game {
     if (this.player.controls.isLocked) {
       if (event.button === 0 && this.player.selectedCoords) {
         // Left click
-        this.world.removeBlock(
-          Math.ceil(this.player.selectedCoords.x - 0.5),
-          Math.ceil(this.player.selectedCoords.y - 0.5),
-          Math.ceil(this.player.selectedCoords.z - 0.5)
-        );
+        const { x, y, z } = this.player.selectedCoords;
+        this.world.removeBlock(x, y, z);
       } else if (event.button === 2 && this.player.blockPlacementCoords) {
-        // console.log("adding block", this.player.activeBlockId);
         if (this.player.activeBlockId != null) {
           const playerPos = new THREE.Vector3(
             Math.floor(this.player.position.x),
             Math.floor(this.player.position.y) - 1,
             Math.floor(this.player.position.z)
           );
-          const blockPos = new THREE.Vector3(
-            Math.floor(this.player.blockPlacementCoords.x - 0.5),
-            Math.floor(this.player.blockPlacementCoords.y - 0.5),
-            Math.floor(this.player.blockPlacementCoords.z - 0.5)
-          );
+          const blockPos = this.player.blockPlacementCoords.clone();
 
           if (playerPos.distanceTo(blockPos) <= this.player.radius * 2) return;
 
@@ -327,6 +301,7 @@ export default class Game {
 
     this.sky.material.uniforms.topColor.value = topColor;
     this.sky.material.uniforms.bottomColor.value = bottomColor;
+    this.world.materials.sunLight = this.sun.intensity;
 
     // Desaturate the fog slightly
     this.scene.fog?.color.copy(topColor).multiplyScalar(0.2);
@@ -354,7 +329,6 @@ export default class Game {
     this.sun.target.updateMatrixWorld();
 
     this.sunHelper.update();
-    this.shadowHelper.update();
   }
 
   draw() {

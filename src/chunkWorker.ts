@@ -1,95 +1,126 @@
 /// <reference lib="webworker" />
-import * as THREE from "three";
+import { transfer } from "comlink";
 import { SimplexNoise } from "three/examples/jsm/math/SimplexNoise";
 
 import { BlockID, oreConfig } from "./Block";
+import {
+  blockIndex,
+  ChunkNeighborhood,
+  ChunkSize,
+  createChunkData,
+  getBlock,
+  setBlock,
+} from "./chunk/ChunkData";
+import { ChunkMesh, meshChunk } from "./chunk/mesher";
 import { RNG } from "./RNG";
-import { WorldParams, WorldSize } from "./WorldChunk";
+import { WorldParams } from "./WorldParams";
 
-declare const self: DedicatedWorkerGlobalScope;
-
-export const generateChunk = async (
-  chunkSize: WorldSize,
-  params: WorldParams,
-  x: number,
-  z: number
-) => {
-  const chunkPos = new THREE.Vector3(x, 0, z);
-  let data = initEmptyChunk(chunkSize);
-  const rng = new RNG(params.seed);
-  data = generateResources(rng, data, chunkSize, chunkPos);
-  data = generateTerrain(rng, data, chunkSize, params, chunkPos);
-  data = generateTrees(rng, data, chunkSize, params, chunkPos);
-  data = generateTallGrass(rng, data, chunkSize, params);
-  data = generateFlowers(rng, data, chunkSize, params);
-
-  return data;
+type GenContext = {
+  size: ChunkSize;
+  params: WorldParams;
+  /** World-space origin of the chunk */
+  originX: number;
+  originZ: number;
+  /** Noise seeded from the world seed; continuous across chunks */
+  noise: SimplexNoise;
+  /** Per-chunk random stream for decorations */
+  rng: RNG;
 };
 
-const initEmptyChunk = (chunkSize: WorldSize) => {
-  const data = new Array(chunkSize.width);
-  for (let x = 0; x < chunkSize.width; x++) {
-    data[x] = new Array(chunkSize.height);
-    for (let y = 0; y < chunkSize.height; y++) {
-      data[x][y] = new Array(chunkSize.width);
-      for (let z = 0; z < chunkSize.width; z++) {
-        data[x][y][z] = BlockID.Air;
-      }
-    }
+const noiseCache = new Map<number, SimplexNoise>();
+const worldNoise = (seed: number) => {
+  let noise = noiseCache.get(seed);
+  if (!noise) {
+    noise = new SimplexNoise(new RNG(seed));
+    noiseCache.set(seed, noise);
   }
-  return data;
+  return noise;
+};
+
+const hashChunkSeed = (seed: number, cx: number, cz: number) => {
+  let h = (seed | 0) ^ 0x9e3779b9;
+  h = Math.imul(h ^ (cx | 0), 0x85ebca6b);
+  h = Math.imul(h ^ (cz | 0), 0xc2b2ae35);
+  h ^= h >>> 16;
+  return h | 0;
+};
+
+export const generateChunk = (
+  size: ChunkSize,
+  params: WorldParams,
+  chunkX: number,
+  chunkZ: number
+): Uint8Array => {
+  const data = createChunkData(size);
+  const ctx: GenContext = {
+    size,
+    params,
+    originX: chunkX * size.width,
+    originZ: chunkZ * size.width,
+    noise: worldNoise(params.seed),
+    rng: new RNG(hashChunkSeed(params.seed, chunkX, chunkZ)),
+  };
+
+  generateResources(ctx, data);
+  generateTerrain(ctx, data);
+  generateTrees(ctx, data);
+  generateTallGrass(ctx, data);
+  generateFlowers(ctx, data);
+
+  return transfer(data, [data.buffer]);
+};
+
+export const buildChunkMesh = (
+  size: ChunkSize,
+  neighborhood: ChunkNeighborhood
+): ChunkMesh => {
+  const mesh = meshChunk(size, neighborhood);
+  const buffers = [mesh.opaque, mesh.cutout].flatMap((m) => [
+    m.positions.buffer,
+    m.uvs.buffer,
+    m.layers.buffer,
+    m.flags.buffer,
+    m.indices.buffer,
+  ]);
+  return transfer(mesh, buffers);
 };
 
 /**
- * Generates the resources (coal, stone, etc.) for the world
+ * Generates the resources (coal, iron, etc.) for the chunk
  */
-export const generateResources = (
-  rng: RNG,
-  input: BlockID[][][],
-  size: WorldSize,
-  chunkPos: THREE.Vector3
-): BlockID[][][] => {
-  const simplex = new SimplexNoise(rng);
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  for (const [_, config] of Object.entries(oreConfig)) {
-    for (let x = 0; x < size.width; x++) {
-      for (let y = 0; y < size.height; y++) {
-        for (let z = 0; z < size.width; z++) {
-          const value = simplex.noise3d(
-            (chunkPos.x + x) / config.scale.x,
-            (chunkPos.y + y) / config.scale.y,
-            (chunkPos.z + z) / config.scale.z
+const generateResources = (ctx: GenContext, data: Uint8Array) => {
+  const { size, noise, originX, originZ } = ctx;
+  for (const config of Object.values(oreConfig)) {
+    for (let y = 0; y < size.height; y++) {
+      for (let z = 0; z < size.width; z++) {
+        for (let x = 0; x < size.width; x++) {
+          const value = noise.noise3d(
+            (originX + x) / config.scale.x,
+            y / config.scale.y,
+            (originZ + z) / config.scale.z
           );
-
           if (value > config.scarcity) {
-            input[x][y][z] = config.id;
+            data[blockIndex(size, x, y, z)] = config.id;
           }
         }
       }
     }
   }
-
-  return input;
 };
 
 /**
- * Generates the terrain data
+ * Generates the terrain heightmap and fills in bedrock, stone, dirt and grass
  */
-export const generateTerrain = (
-  rng: RNG,
-  input: BlockID[][][],
-  size: WorldSize,
-  params: WorldParams,
-  chunkPos: THREE.Vector3
-): BlockID[][][] => {
-  const simplex = new SimplexNoise(rng);
-  for (let x = 0; x < size.width; x++) {
-    for (let z = 0; z < size.width; z++) {
-      const value = simplex.noise(
-        (chunkPos.x + x) / params.terrain.scale,
-        (chunkPos.z + z) / params.terrain.scale
+const generateTerrain = (ctx: GenContext, data: Uint8Array) => {
+  const { size, params, noise, originX, originZ } = ctx;
+  for (let z = 0; z < size.width; z++) {
+    for (let x = 0; x < size.width; x++) {
+      const wx = originX + x;
+      const wz = originZ + z;
+      const value = noise.noise(
+        wx / params.terrain.scale,
+        wz / params.terrain.scale
       );
-
       const scaledNoise =
         params.terrain.offset + params.terrain.magnitude * value;
 
@@ -98,265 +129,193 @@ export const generateTerrain = (
 
       const numSurfaceBlocks =
         params.surface.offset +
-        Math.abs(simplex.noise(x, z) * params.surface.magnitude);
-
+        Math.abs(noise.noise(wx, wz) * params.surface.magnitude);
       const numBedrockBlocks =
         params.bedrock.offset +
-        Math.abs(simplex.noise(x, z) * params.bedrock.magnitude);
+        Math.abs(noise.noise(wx, wz) * params.bedrock.magnitude);
 
       for (let y = 0; y < size.height; y++) {
+        const i = blockIndex(size, x, y, z);
         if (y < height) {
           if (y < numBedrockBlocks) {
-            input[x][y][z] = BlockID.Bedrock;
+            data[i] = BlockID.Bedrock;
           } else if (y < height - numSurfaceBlocks) {
-            if (input[x][y][z] === BlockID.Air) {
-              input[x][y][z] = BlockID.Stone;
+            if (data[i] === BlockID.Air) {
+              data[i] = BlockID.Stone;
             }
           } else {
-            input[x][y][z] = BlockID.Dirt;
+            data[i] = BlockID.Dirt;
           }
         } else if (y === height) {
-          input[x][y][z] = BlockID.Grass;
-        } else if (y > height) {
-          input[x][y][z] = BlockID.Air;
+          data[i] = BlockID.Grass;
+        } else {
+          data[i] = BlockID.Air;
         }
       }
     }
   }
-
-  return input;
 };
 
 /**
  * Generates trees
  */
-export const generateTrees = (
-  rng: RNG,
-  input: BlockID[][][],
-  size: WorldSize,
-  params: WorldParams,
-  chunkPos: THREE.Vector3
-): BlockID[][][] => {
-  const simplex = new SimplexNoise(rng);
+const generateTrees = (ctx: GenContext, data: Uint8Array) => {
+  const { size, params, noise, rng, originX, originZ } = ctx;
   const canopySize = params.trees.canopy.size.max;
   for (let baseX = canopySize; baseX < size.width - canopySize; baseX++) {
     for (let baseZ = canopySize; baseZ < size.width - canopySize; baseZ++) {
-      const n =
-        simplex.noise(chunkPos.x + baseX, chunkPos.z + baseZ) * 0.5 + 0.5;
+      const n = noise.noise(originX + baseX, originZ + baseZ) * 0.5 + 0.5;
       if (n < 1 - params.trees.frequency) {
         continue;
       }
 
       // Find the grass tile
       for (let y = size.height - 1; y >= 0; y--) {
-        if (input[baseX][y][baseZ] !== BlockID.Grass) {
+        if (getBlock(data, size, baseX, y, baseZ) !== BlockID.Grass) {
           continue;
         }
 
-        // Found grass, move one time up
         const baseY = y + 1;
-
         const minH = params.trees.trunkHeight.min;
         const maxH = params.trees.trunkHeight.max;
         const trunkHeight = Math.round(rng.random() * (maxH - minH)) + minH;
         const topY = baseY + trunkHeight;
 
-        // Fill in blocks for the trunk
         for (let i = baseY; i < topY; i++) {
-          input[baseX][i][baseZ] = BlockID.OakLog;
+          setBlock(data, size, baseX, i, baseZ, BlockID.OakLog);
         }
 
-        // Generate the canopy
-        // generate layer by layer, 4 layers in total
-        for (let i = 0; i < 4; i++) {
-          if (i === 0) {
-            // first layer above the height of tree and has 5 leaves in a + shape
-            input[baseX][topY][baseZ] = BlockID.Leaves;
-            input[baseX + 1][topY][baseZ] = BlockID.Leaves;
-            input[baseX - 1][topY][baseZ] = BlockID.Leaves;
-            input[baseX][topY][baseZ + 1] = BlockID.Leaves;
-            input[baseX][topY][baseZ - 1] = BlockID.Leaves;
-          } else if (i === 1) {
-            // base layer
-            input[baseX][topY - i][baseZ] = BlockID.Leaves;
-            input[baseX + 1][topY - i][baseZ] = BlockID.Leaves;
-            input[baseX - 1][topY - i][baseZ] = BlockID.Leaves;
-            input[baseX][topY - i][baseZ + 1] = BlockID.Leaves;
-            input[baseX][topY - i][baseZ - 1] = BlockID.Leaves;
+        const leafIfAir = (x: number, ly: number, z: number) => {
+          if (getBlock(data, size, x, ly, z) === BlockID.Air) {
+            setBlock(data, size, x, ly, z, BlockID.Leaves);
+          }
+        };
+        const plus = (ly: number) => {
+          setBlock(data, size, baseX, ly, baseZ, BlockID.Leaves);
+          setBlock(data, size, baseX + 1, ly, baseZ, BlockID.Leaves);
+          setBlock(data, size, baseX - 1, ly, baseZ, BlockID.Leaves);
+          setBlock(data, size, baseX, ly, baseZ + 1, BlockID.Leaves);
+          setBlock(data, size, baseX, ly, baseZ - 1, BlockID.Leaves);
+        };
 
-            // diagonal leaf blocks grow min of 1 and max of 3 blocks away from the trunk
+        // Canopy is generated in 4 layers from the top down
+        for (let i = 0; i < 4; i++) {
+          const ly = topY - i;
+          if (i === 0) {
+            plus(ly);
+          } else if (i === 1) {
+            plus(ly);
             const minR = params.trees.canopy.size.min;
             const maxR = params.trees.canopy.size.max;
             const R = Math.round(rng.random() * (maxR - minR)) + minR;
-
-            // grow leaves in a diagonal shape
             for (let x = -R; x <= R; x++) {
               for (let z = -R; z <= R; z++) {
-                if (x * x + z * z > R * R) {
-                  continue;
-                }
-
-                if (input[baseX + x][topY - i][baseZ + z] !== BlockID.Air) {
-                  continue;
-                }
-
+                if (x * x + z * z > R * R) continue;
                 if (rng.random() > 0.5) {
-                  input[baseX + x][topY - i][baseZ + z] = BlockID.Leaves;
+                  leafIfAir(baseX + x, ly, baseZ + z);
                 }
               }
             }
-          } else if (i === 2 || i == 3) {
+          } else {
             for (let x = -2; x <= 2; x++) {
               for (let z = -2; z <= 2; z++) {
-                if (input[baseX + x][topY - i][baseZ + z] !== BlockID.Air) {
-                  continue;
-                }
-
-                input[baseX + x][topY - i][baseZ + z] = BlockID.Leaves;
+                leafIfAir(baseX + x, ly, baseZ + z);
               }
             }
-
-            // remove 4 corners randomly
             for (const x of [-2, 2]) {
               for (const z of [-2, 2]) {
                 if (rng.random() > 0.5) {
-                  input[baseX + x][topY - i][baseZ + z] = BlockID.Air;
+                  setBlock(data, size, baseX + x, ly, baseZ + z, BlockID.Air);
                 }
               }
             }
           }
         }
+        break;
       }
     }
   }
+};
 
-  return input;
+/**
+ * Finds the y of the topmost grass block in a column that is not under leaves
+ */
+const findOpenGrass = (
+  data: Uint8Array,
+  size: ChunkSize,
+  x: number,
+  z: number
+): number => {
+  for (let y = size.height - 1; y >= 0; y--) {
+    const id = getBlock(data, size, x, y, z);
+    if (id === BlockID.Leaves) return -1;
+    if (id === BlockID.Grass) {
+      return getBlock(data, size, x, y + 1, z) === BlockID.Air ? y : -1;
+    }
+  }
+  return -1;
 };
 
 /**
  * Generate random patches of tall grass across the top surface
  */
+const generateTallGrass = (ctx: GenContext, data: Uint8Array) => {
+  const { size, params, rng } = ctx;
+  for (let z = 0; z < size.width; z++) {
+    for (let x = 0; x < size.width; x++) {
+      const y = findOpenGrass(data, size, x, z);
+      if (y < 0 || rng.random() >= params.grass.frequency) continue;
 
-export const generateTallGrass = (
-  rng: RNG,
-  input: BlockID[][][],
-  size: WorldSize,
-  params: WorldParams
-): BlockID[][][] => {
-  for (let x = 0; x < size.width; x++) {
-    for (let z = 0; z < size.width; z++) {
-      // starting from the top of the chunk, find the first grass block
-      // if come in contact with leaves, stop since grass doesn't grow under trees
-      for (let y = size.height - 1; y >= 0; y--) {
-        if (input[x][y][z] === BlockID.Leaves) {
-          break;
-        }
+      const baseY = y + 1;
+      setBlock(data, size, x, baseY, z, BlockID.TallGrass);
 
-        if (input[x][y][z] === BlockID.Grass) {
-          // found grass, move one time up
-          const baseY = y + 1;
-
-          if (input[x][baseY][z] !== BlockID.Air) {
-            continue;
-          }
-
-          if (rng.random() < params.grass.frequency) {
-            input[x][baseY][z] = BlockID.TallGrass;
-
-            // Define the maximum distance from the center
-            const maxDistance = params.grass.patchSize;
-
-            // Random walk algorithm
-            let currentX = x;
-            let currentZ = z;
-            for (let i = 0; i < maxDistance; i++) {
-              const direction = rng.random() * 2 * Math.PI; // Random direction
-              currentX += Math.round(Math.cos(direction));
-              currentZ += Math.round(Math.sin(direction));
-
-              // Check if the new position is within the chunk boundaries and is air
-              if (
-                currentX >= 0 &&
-                currentX < size.width &&
-                currentZ >= 0 &&
-                currentZ < size.width &&
-                input[currentX][baseY][currentZ] === BlockID.Air &&
-                input[currentX][y][currentZ] === BlockID.Grass
-              ) {
-                input[currentX][baseY][currentZ] = BlockID.TallGrass;
-              }
-            }
-          }
+      // Random walk outwards from the seed block
+      let currentX = x;
+      let currentZ = z;
+      for (let i = 0; i < params.grass.patchSize; i++) {
+        const direction = rng.random() * 2 * Math.PI;
+        currentX += Math.round(Math.cos(direction));
+        currentZ += Math.round(Math.sin(direction));
+        if (
+          getBlock(data, size, currentX, baseY, currentZ) === BlockID.Air &&
+          getBlock(data, size, currentX, y, currentZ) === BlockID.Grass
+        ) {
+          setBlock(data, size, currentX, baseY, currentZ, BlockID.TallGrass);
         }
       }
     }
   }
-
-  return input;
 };
 
 /**
- * Generate random patches of flowers across the top surface
+ * Generate flowers on open grass away from tall grass patches
  */
-export const generateFlowers = (
-  rng: RNG,
-  input: BlockID[][][],
-  size: WorldSize,
-  params: WorldParams
-): BlockID[][][] => {
-  for (let x = 0; x < size.width; x++) {
-    for (let z = 0; z < size.width; z++) {
-      // starting from the top of the chunk, find the first grass block
-      // if come in contact with leaves, stop since flowers doesn't grow under trees
-      for (let y = size.height - 1; y >= 0; y--) {
-        if (input[x][y][z] === BlockID.Leaves) {
-          break;
-        }
+const generateFlowers = (ctx: GenContext, data: Uint8Array) => {
+  const { size, params, rng } = ctx;
+  for (let z = 0; z < size.width; z++) {
+    for (let x = 0; x < size.width; x++) {
+      const y = findOpenGrass(data, size, x, z);
+      if (y < 0) continue;
+      const baseY = y + 1;
 
-        if (input[x][y][z] === BlockID.Grass) {
-          // found grass, move one time up
-          const baseY = y + 1;
-
-          if (input[x][baseY][z] !== BlockID.Air) {
-            continue;
-          }
-
-          // Check if there's a tallgrass block within 3 blocks
-          let isTallGrassNearby = false;
-          for (let dx = -3; dx <= 3; dx++) {
-            for (let dz = -3; dz <= 3; dz++) {
-              const nx = x + dx;
-              const nz = z + dz;
-              if (
-                nx >= 0 &&
-                nx < size.width &&
-                nz >= 0 &&
-                nz < size.width &&
-                input[nx][baseY][nz] === BlockID.TallGrass
-              ) {
-                isTallGrassNearby = true;
-                break;
-              }
-            }
-            if (isTallGrassNearby) {
-              break;
-            }
-          }
-
-          if (isTallGrassNearby) {
-            continue;
-          }
-
-          const flowerId =
-            rng.random() < 0.5 ? BlockID.FlowerDandelion : BlockID.FlowerRose;
-
-          if (rng.random() < params.flowers.frequency) {
-            input[x][baseY][z] = flowerId;
+      let isTallGrassNearby = false;
+      for (let dx = -3; dx <= 3 && !isTallGrassNearby; dx++) {
+        for (let dz = -3; dz <= 3; dz++) {
+          if (
+            getBlock(data, size, x + dx, baseY, z + dz) === BlockID.TallGrass
+          ) {
+            isTallGrassNearby = true;
+            break;
           }
         }
       }
+      if (isTallGrassNearby) continue;
+
+      const flowerId =
+        rng.random() < 0.5 ? BlockID.FlowerDandelion : BlockID.FlowerRose;
+      if (rng.random() < params.flowers.frequency) {
+        setBlock(data, size, x, baseY, z, flowerId);
+      }
     }
   }
-
-  return input;
 };
