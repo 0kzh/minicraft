@@ -194,6 +194,31 @@ body {
   }
 }
 
+#pause {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  display: none;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.55);
+
+  p {
+    color: white;
+    text-shadow: 1.5px 1.5px 0px rgba(75, 75, 75, 0.8);
+  }
+
+  .hint {
+    font-size: 12px;
+    max-width: 420px;
+    text-align: center;
+    opacity: 0.8;
+  }
+}
+
 .mc-button {
   height: var(--btn-size);
   width: calc(var(--btn-size) * 10);

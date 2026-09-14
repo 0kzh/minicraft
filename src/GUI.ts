@@ -1,6 +1,5 @@
 import GUI from "lil-gui";
 
-import { oreConfig } from "./Block";
 import { Physics } from "./Physics";
 import { Player } from "./Player";
 import { World } from "./World";
@@ -9,11 +8,13 @@ export function createUI(
   world: World,
   player: Player,
   physics: Physics,
-  scene: THREE.Scene,
+  fogRange: { near: number; far: number },
   sunSettings: { distance: number; cycleLength: number },
-  sunHelper: THREE.DirectionalLightHelper
-) {
-  const gui = new GUI();
+  sunHelper: THREE.DirectionalLightHelper,
+  regenerate: () => void
+): GUI {
+  const gui = new GUI({ title: "Debug (F3)" });
+  gui.hide();
   const custom = { volume: 0.3 };
 
   const soundFolder = gui.addFolder("Sound");
@@ -42,10 +43,8 @@ export function createUI(
     .add(sunSettings, "cycleLength", 0, 1000, 1)
     .name("Day Length (s)");
   worldFolder.add(world, "renderDistance", 1, 32, 1).name("Render Distance");
-  if (scene.fog) {
-    worldFolder.add(scene.fog, "near", 1, 200, 1).name("Fog Near");
-    worldFolder.add(scene.fog, "far", 1, 200, 1).name("Fog Far");
-  }
+  worldFolder.add(fogRange, "near", 1, 400, 1).name("Fog Near");
+  worldFolder.add(fogRange, "far", 1, 600, 1).name("Fog Far");
 
   const terrainFolder = gui.addFolder("Terrain");
   terrainFolder
@@ -53,57 +52,43 @@ export function createUI(
     .name("X-ray Mode (Disable Textures)");
   terrainFolder.add(world.chunkSize, "width", 8, 128, 1).name("Width");
   terrainFolder.add(world.chunkSize, "height", 8, 255, 1).name("Height");
-  terrainFolder.add(world.params, "seed", 1, 10000, 1).name("Seed");
-  terrainFolder.add(world.params.terrain, "scale", 10, 100, 1).name("Scale");
-  terrainFolder.add(world.params.terrain, "magnitude", 0, 1).name("Magnitude");
-  terrainFolder.add(world.params.terrain, "offset", 0, 1).name("Offset");
-
-  const treesFolder = terrainFolder.addFolder("Trees");
-  treesFolder.add(world.params.trees, "frequency", 0, 1, 0.1).name("Frequency");
-  treesFolder
-    .add(world.params.trees.trunkHeight, "min", 0, 10, 1)
-    .name("Min Trunk Height");
-  treesFolder
-    .add(world.params.trees.trunkHeight, "max", 0, 10, 1)
-    .name("Max Trunk Height");
-  treesFolder
-    .add(world.params.trees.canopy.size, "min", 0, 10, 1)
-    .name("Min Canopy Size");
-  treesFolder
-    .add(world.params.trees.canopy.size, "max", 0, 10, 1)
-    .name("Max Canopy Size");
-
-  const grassFolder = terrainFolder.addFolder("Grass");
-  grassFolder.add(world.params.grass, "frequency", 0, 1, 0.1).name("Frequency");
-  grassFolder
-    .add(world.params.grass, "patchSize", 1, 10, 1)
-    .name("Grass Patch Size");
-
+  terrainFolder.add(world.params, "seed", 0, 2 ** 31 - 1, 1).name("Seed");
+  const terrain = world.params.terrain;
+  terrainFolder.add(terrain, "seaLevel", 0, 120, 1).name("Sea Level");
+  terrainFolder.add(terrain, "amplitude", 0, 2.5, 0.05).name("Mountains");
   terrainFolder
-    .add(world.params.flowers, "frequency", 0, 1, 0.1)
-    .name("Frequency");
+    .add(terrain, "continentScale", 100, 2000, 10)
+    .name("Continent Scale");
+  terrainFolder
+    .add(terrain, "erosionScale", 100, 2000, 10)
+    .name("Erosion Scale");
+  terrainFolder.add(terrain, "ridgeScale", 40, 500, 5).name("Ridge Scale");
+  terrainFolder.add(terrain, "detailScale", 10, 120, 1).name("Detail Scale");
+  terrainFolder.add(terrain, "biomeScale", 100, 2000, 10).name("Biome Scale");
+  terrainFolder.add(terrain, "rivers").name("Rivers");
+  terrainFolder.add(terrain, "riverScale", 100, 1500, 10).name("River Scale");
 
-  const resourcesFolder = gui.addFolder("Resources");
+  const cavesFolder = terrainFolder.addFolder("Caves");
+  const caves = world.params.caves;
+  cavesFolder.add(caves, "enabled").name("Enabled");
+  cavesFolder.add(caves, "ravines").name("Ravines");
+  cavesFolder.add(caves, "cheeseScale", 16, 128, 1).name("Cavern Scale");
+  cavesFolder
+    .add(caves, "cheeseThreshold", 0.2, 0.9, 0.01)
+    .name("Cavern Threshold");
+  cavesFolder.add(caves, "spaghettiScale", 8, 96, 1).name("Tunnel Scale");
+  cavesFolder
+    .add(caves, "spaghettiRadius", 0.02, 0.2, 0.005)
+    .name("Tunnel Radius");
+  cavesFolder.add(caves, "lavaLevel", 0, 40, 1).name("Lava Level");
 
-  for (const resource of Object.keys(oreConfig)) {
-    const resourceFolder = resourcesFolder.addFolder(resource);
-    resourceFolder
-      .add(oreConfig[resource as keyof typeof oreConfig], "scarcity", 0, 1)
-      .name("Scarcity");
+  const decorFolder = terrainFolder.addFolder("Decoration");
+  decorFolder.add(world.params.trees, "density", 0, 3, 0.05).name("Trees");
+  decorFolder
+    .add(world.params.vegetation, "density", 0, 3, 0.05)
+    .name("Plants");
+  decorFolder.add(world.params.ores, "density", 0, 3, 0.05).name("Ores");
 
-    const scaleFolder = resourceFolder.addFolder("Scale");
-    scaleFolder
-      .add(oreConfig[resource as keyof typeof oreConfig].scale, "x", 1, 100)
-      .name("X Scale");
-    scaleFolder
-      .add(oreConfig[resource as keyof typeof oreConfig].scale, "y", 1, 100)
-      .name("Y Scale");
-    scaleFolder
-      .add(oreConfig[resource as keyof typeof oreConfig].scale, "z", 1, 100)
-      .name("Z Scale");
-  }
-
-  gui
-    .add({ regenerate: () => world.regenerate(player) }, "regenerate")
-    .name("Generate");
+  gui.add({ regenerate }, "regenerate").name("Generate (wipes edits)");
+  return gui;
 }

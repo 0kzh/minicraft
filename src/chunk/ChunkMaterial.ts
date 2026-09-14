@@ -1,5 +1,12 @@
 import * as THREE from "three";
 
+import { BlockTextures } from "../Block/textures";
+
+import { UV_SCALE } from "./mesher";
+
+/** Max animated texture layers the shader cycles */
+const MAX_ANIMATIONS = 4;
+
 const vertexShader = /* glsl */ `
   in float aLayer;
   in float aFlags;
@@ -11,14 +18,24 @@ const vertexShader = /* glsl */ `
   out float vEmissive;
   out vec2 vLight;
 
+  uniform float uTime;
+  // (base layer, first frame layer, frame count, fps) per animated texture
+  uniform vec4 uAnim[MAX_ANIMATIONS];
+
   #include <fog_pars_vertex>
 
   // Per-face directional shading: +X, -X, +Y, -Y, +Z, -Z
   const float FACE_SHADE[6] = float[6](0.6, 0.6, 1.0, 0.5, 0.8, 0.8);
 
   void main() {
-    vUv = uv;
+    vUv = uv / UV_SCALE;
     vLayer = aLayer;
+    for (int i = 0; i < MAX_ANIMATIONS; i++) {
+      if (uAnim[i].z > 0.0 && abs(aLayer - uAnim[i].x) < 0.5) {
+        float frame = mod(floor(uTime * uAnim[i].w), uAnim[i].z);
+        vLayer = uAnim[i].y + frame;
+      }
+    }
     vLight = aLight;
     int flags = int(aFlags + 0.5);
     // Ambient occlusion: 0..3 -> 0.4..1.0
@@ -39,6 +56,7 @@ const fragmentShader = /* glsl */ `
   uniform sampler2DArray uAtlas;
   uniform float uSunLight;
   uniform bool uWireframe;
+  uniform float uAlpha;
 
   in vec2 vUv;
   in float vLayer;
@@ -73,7 +91,12 @@ const fragmentShader = /* glsl */ `
 
     vec3 light = lightmap(vLight.x, vLight.y) * vShade;
     light = max(light, vec3(vEmissive));
-    gl_FragColor = vec4(texel.rgb * light, 1.0);
+    #ifdef TRANSLUCENT
+      // Emissive liquids (lava) render solid
+      gl_FragColor = vec4(texel.rgb * light, mix(uAlpha, 1.0, vEmissive));
+    #else
+      gl_FragColor = vec4(texel.rgb * light, 1.0);
+    #endif
 
     #include <fog_fragment>
     #include <colorspace_fragment>
@@ -84,25 +107,41 @@ export type ChunkUniforms = {
   uAtlas: THREE.IUniform<THREE.DataArrayTexture | null>;
   uSunLight: THREE.IUniform<number>;
   uWireframe: THREE.IUniform<boolean>;
+  uTime: THREE.IUniform<number>;
+  uAlpha: THREE.IUniform<number>;
+  uAnim: THREE.IUniform<THREE.Vector4[]>;
 };
 
+type Variant = "opaque" | "cutout" | "translucent";
+
 /**
- * Materials shared by every chunk mesh: one for opaque cubes, one for
- * alpha-tested cutouts (leaves, plants). Both sample the block texture array.
+ * Materials shared by every chunk mesh: opaque cubes, alpha-tested cutouts
+ * (leaves, plants) and alpha-blended translucents (water, lava). All sample
+ * the block texture array.
  */
 export class ChunkMaterials {
   readonly uniforms: ChunkUniforms;
   readonly opaque: THREE.ShaderMaterial;
   readonly cutout: THREE.ShaderMaterial;
+  readonly translucent: THREE.ShaderMaterial;
 
-  constructor(atlas: THREE.DataArrayTexture) {
+  constructor(textures: BlockTextures) {
+    const anim = Array.from({ length: MAX_ANIMATIONS }, (_, i) => {
+      const a = textures.animations[i];
+      return a
+        ? new THREE.Vector4(a.layer, a.first, a.frames, a.fps)
+        : new THREE.Vector4(-1, 0, 0, 0);
+    });
     this.uniforms = {
-      uAtlas: { value: atlas },
+      uAtlas: { value: textures.array },
       uSunLight: { value: 1 },
       uWireframe: { value: false },
+      uTime: { value: 0 },
+      uAlpha: { value: 0.72 },
+      uAnim: { value: anim },
     };
 
-    const make = (cutout: boolean) =>
+    const make = (variant: Variant) =>
       new THREE.ShaderMaterial({
         glslVersion: THREE.GLSL3,
         vertexShader,
@@ -111,29 +150,48 @@ export class ChunkMaterials {
           THREE.UniformsLib.fog,
           this.uniforms,
         ]),
-        defines: cutout ? { CUTOUT: "" } : {},
+        defines: {
+          MAX_ANIMATIONS,
+          UV_SCALE: UV_SCALE.toFixed(1),
+          ...(variant === "cutout"
+            ? { CUTOUT: "" }
+            : variant === "translucent"
+            ? { TRANSLUCENT: "" }
+            : {}),
+        },
         fog: true,
-        side: cutout ? THREE.DoubleSide : THREE.FrontSide,
+        side: variant === "opaque" ? THREE.FrontSide : THREE.DoubleSide,
+        transparent: variant === "translucent",
+        depthWrite: true,
       });
 
-    this.opaque = make(false);
-    this.cutout = make(true);
+    this.opaque = make("opaque");
+    this.cutout = make("cutout");
+    this.translucent = make("translucent");
 
-    // UniformsUtils.merge clones values; re-point both materials at the shared uniform objects
-    for (const material of [this.opaque, this.cutout]) {
+    // UniformsUtils.merge clones values; re-point the materials at the shared uniform objects
+    for (const material of this.all) {
       for (const key of Object.keys(this.uniforms) as (keyof ChunkUniforms)[]) {
         material.uniforms[key] = this.uniforms[key];
       }
     }
   }
 
+  private get all() {
+    return [this.opaque, this.cutout, this.translucent];
+  }
+
   set sunLight(value: number) {
     this.uniforms.uSunLight.value = value;
   }
 
+  /** Elapsed seconds, drives liquid animation */
+  set time(value: number) {
+    this.uniforms.uTime.value = value;
+  }
+
   set wireframe(value: boolean) {
     this.uniforms.uWireframe.value = value;
-    this.opaque.wireframe = value;
-    this.cutout.wireframe = value;
+    for (const material of this.all) material.wireframe = value;
   }
 }

@@ -17,8 +17,9 @@ import { WorldParams } from "./WorldParams";
 export type { ChunkSize as WorldSize } from "./chunk/ChunkData";
 
 /**
- * A single column of the world. Owns flat voxel data and up to two meshes
- * (opaque + cutout) that are rebuilt on a worker whenever the data changes.
+ * A single column of the world. Owns flat voxel data and up to three meshes
+ * (opaque, cutout, translucent) that are rebuilt on a worker whenever the
+ * data changes.
  */
 export class WorldChunk extends THREE.Group {
   readonly chunkX: number;
@@ -36,6 +37,7 @@ export class WorldChunk extends THREE.Group {
 
   private opaqueMesh: THREE.Mesh | null = null;
   private cutoutMesh: THREE.Mesh | null = null;
+  private translucentMesh: THREE.Mesh | null = null;
   private meshing = false;
   private meshVersion = 0;
 
@@ -79,20 +81,10 @@ export class WorldChunk extends THREE.Group {
    */
   loadPlayerChanges() {
     if (!this.data) return;
-    for (let y = 0; y < this.size.height; y++) {
-      for (let z = 0; z < this.size.width; z++) {
-        for (let x = 0; x < this.size.width; x++) {
-          if (this.dataStore.contains(this.chunkX, this.chunkZ, x, y, z)) {
-            this.data[blockIndex(this.size, x, y, z)] = this.dataStore.get(
-              this.chunkX,
-              this.chunkZ,
-              x,
-              y,
-              z
-            );
-          }
-        }
-      }
+    const edits = this.dataStore.getChunk(this.chunkX, this.chunkZ);
+    if (!edits) return;
+    for (const [index, id] of edits) {
+      if (index < this.data.length) this.data[index] = id;
     }
   }
 
@@ -134,6 +126,11 @@ export class WorldChunk extends THREE.Group {
       this.cutoutMesh,
       mesh.cutout,
       this.materials.cutout
+    );
+    this.translucentMesh = this.swapMesh(
+      this.translucentMesh,
+      mesh.translucent,
+      this.materials.translucent
     );
   }
 
@@ -199,7 +196,7 @@ export class WorldChunk extends THREE.Group {
     const i = blockIndex(this.size, x, y, z);
     if (this.data[i] === id) return false;
     this.data[i] = id;
-    this.dataStore.set(this.chunkX, this.chunkZ, x, y, z, id);
+    this.dataStore.set(this.chunkX, this.chunkZ, i, id);
     this.meshDirty = true;
     return true;
   }
@@ -207,7 +204,11 @@ export class WorldChunk extends THREE.Group {
   dispose() {
     this.disposed = true;
     this.meshVersion++;
-    for (const mesh of [this.opaqueMesh, this.cutoutMesh]) {
+    for (const mesh of [
+      this.opaqueMesh,
+      this.cutoutMesh,
+      this.translucentMesh,
+    ]) {
       if (mesh) {
         this.remove(mesh);
         mesh.geometry.dispose();
@@ -215,5 +216,6 @@ export class WorldChunk extends THREE.Group {
     }
     this.opaqueMesh = null;
     this.cutoutMesh = null;
+    this.translucentMesh = null;
   }
 }

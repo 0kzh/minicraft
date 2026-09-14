@@ -27,6 +27,7 @@
 			<div class="stat" id="player-pos-z"></div>
 			<div class="stat" id="triangle-count"></div>
 			<div class="stat" id="render-calls"></div>
+			<div class="stat" id="world-seed"></div>
 		</div>
 		<div id="ui">
 			<svg id="cursor" width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -47,28 +48,32 @@
 			</div>
 		</div>
 		<div id="menu">
-			<div id="main-menu">
-				<img id="logo" src="logo.png" />
-				<div>
-					<div id="buttons">
-						<div class="mc-button full" tabindex="0" role="button">
-							<div id="start-game" class="title">Create new world</div>
-						</div>
-						<div class="mc-button full" tabindex="0" role="button">
-							<div id="github" class="title">View GitHub repo</div>
-						</div>
-						<div class="mc-button full" tabindex="0" role="button">
-							<div id="website" class="title">Visit my website</div>
-						</div>
-					</div>
-					<p>by Kelvin Zhang</p>
-				</div>
-			</div>
 			<div id="loading">
 				<p>Loading Level</p>
 				<p>Generating terrain</p>
 				<div id="loading-progress">
 					<div id="loading-progress-bar"></div>
+				</div>
+			</div>
+		</div>
+		<div id="pause">
+			<div id="main-menu">
+				<img id="logo" src="logo.png" />
+				<div>
+					<div id="buttons">
+						<div class="mc-button full" tabindex="0" role="button">
+							<div id="resume" class="title">Back to Game</div>
+						</div>
+						<div class="mc-button full" tabindex="0" role="button">
+							<div id="new-world" class="title">New World</div>
+						</div>
+						<div class="mc-button full" tabindex="0" role="button">
+							<div id="github" class="title">View GitHub repo</div>
+						</div>
+					</div>
+					<p id="seed-label"></p>
+					<p class="hint">WASD move &middot; Space jump / swim &middot; Left click break &middot; Right click place &middot; 1-9 pick block &middot; F3 debug</p>
+					<p>by Kelvin Zhang</p>
 				</div>
 			</div>
 		</div>
