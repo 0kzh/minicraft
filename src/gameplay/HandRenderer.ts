@@ -289,12 +289,7 @@ export class HandRenderer {
     }
   }
 
-  render(
-    renderer: THREE.WebGLRenderer,
-    player: Player,
-    alpha: number,
-    roll: number
-  ) {
+  render(renderer: THREE.WebGLRenderer, player: Player, alpha: number) {
     const partial = this.tickAccumulator / Physics.TICK;
     const equip = THREE.MathUtils.lerp(
       this.prevEquipProgress,
@@ -312,9 +307,6 @@ export class HandRenderer {
     const rotateX = (deg: number) => m.multiply(t.makeRotationX(deg * DEG));
     const rotateY = (deg: number) => m.multiply(t.makeRotationY(deg * DEG));
     const rotateZ = (deg: number) => m.multiply(t.makeRotationZ(deg * DEG));
-
-    // GameRenderer.bobHurt is applied to the hand pass as well
-    m.makeRotationZ(-roll);
 
     if (held !== null) {
       const sq = Math.sqrt(swing);

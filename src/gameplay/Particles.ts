@@ -125,26 +125,6 @@ export class Particles {
         }
   }
 
-  /**
-   * A single chip off the face being mined, pushed slightly away from it
-   * (`nx, ny, nz` is the face normal)
-   */
-  chip(
-    x: number,
-    y: number,
-    z: number,
-    nx: number,
-    ny: number,
-    nz: number,
-    id: BlockID
-  ) {
-    const r = () => Math.random() * 0.8 + 0.1;
-    const px = x + (nx === 0 ? r() : nx > 0 ? 1.1 : -0.1);
-    const py = y + (ny === 0 ? r() : ny > 0 ? 1.1 : -0.1);
-    const pz = z + (nz === 0 ? r() : nz > 0 ? 1.1 : -0.1);
-    this.spawn(px, py, pz, nx, ny, nz, id);
-  }
-
   private spawn(
     x: number,
     y: number,

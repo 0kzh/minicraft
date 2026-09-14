@@ -12,15 +12,11 @@ import {
 } from "./Block/textures";
 import { ChunkMaterials } from "./chunk/ChunkMaterial";
 import { BlockBreaker } from "./gameplay/BlockBreaker";
-import { blockStats, CREATIVE_PALETTE } from "./gameplay/blockStats";
 import { HandRenderer } from "./gameplay/HandRenderer";
 import { Hud } from "./gameplay/Hud";
-import { Inventory } from "./gameplay/Inventory";
 import { Particles } from "./gameplay/Particles";
-import { Vitals } from "./gameplay/Vitals";
 import { createUI } from "./GUI";
 import {
-  GameMode,
   loadRenderDistance,
   randomSeed,
   SAVE_VERSION,
@@ -36,7 +32,6 @@ import { World } from "./World";
 
 const MIN_RENDER_DISTANCE = 2;
 const MAX_RENDER_DISTANCE = 32;
-const DEFAULT_MODE: GameMode = "survival";
 
 const UNDERWATER_FOG = new THREE.Color(0x0a2a55);
 const LAVA_FOG = new THREE.Color(0x7a1e00);
@@ -63,11 +58,7 @@ export default class Game {
   private particles!: Particles;
   private breaker!: BlockBreaker;
   private hand!: HandRenderer;
-  private vitals = new Vitals();
   private hud = new Hud();
-  private survivalInventory = new Inventory();
-  private creativeInventory = Inventory.creative(CREATIVE_PALETTE);
-  mode: GameMode = DEFAULT_MODE;
   /** Deferred right-click repeat, like vanilla's 4-tick place delay */
   private placeCooldown = 0;
   private placing = false;
@@ -112,17 +103,10 @@ export default class Game {
         this.world.restore(this.player, new THREE.Vector3(x, y, z));
         this.player.setLook(yaw, pitch);
       }
-      if (saved.survival && saved.survival.health > 0) {
-        this.vitals.health = saved.survival.health;
-        this.vitals.food = saved.survival.food ?? this.vitals.food;
-        this.vitals.saturation =
-          saved.survival.saturation ?? this.vitals.saturation;
-        this.survivalInventory.load(saved.survival.inventory);
-      }
     } else {
       await storage.saveMeta(this.meta);
     }
-    this.setMode(saved?.mode ?? DEFAULT_MODE, false);
+    this.refreshHotbar();
 
     this.initStats();
     this.initListeners();
@@ -139,19 +123,15 @@ export default class Game {
       seed: randomSeed(),
       createdAt: now,
       updatedAt: now,
-      mode: DEFAULT_MODE,
     };
   }
 
   /** Wipes the save and generates a fresh world from a random seed */
   async newWorld() {
     await this.flushSave();
-    this.meta = { ...Game.newMeta(), mode: this.mode };
+    this.meta = Game.newMeta();
     this.world.dataStore.clear();
     await this.storage.clear();
-    this.survivalInventory.clear();
-    this.vitals.reset();
-    this.refreshHotbar();
     await this.storage.saveMeta(this.meta);
     this.world.seed = this.meta.seed;
     this.updateSeedLabel();
@@ -162,7 +142,7 @@ export default class Game {
   /** Regenerates with the current (debug-tweaked) params, discarding edits */
   async regenerateWorld() {
     await this.flushSave();
-    this.meta = { ...Game.newMeta(), seed: this.world.seed, mode: this.mode };
+    this.meta = { ...Game.newMeta(), seed: this.world.seed };
     this.world.dataStore.clear();
     await this.storage.clear();
     await this.storage.saveMeta(this.meta);
@@ -170,32 +150,7 @@ export default class Game {
     this.world.regenerate(this.player);
   }
 
-  // ---------------------------------------------------------------- game modes
-
-  get survival() {
-    return this.mode === "survival";
-  }
-
-  setMode(mode: GameMode, announce = true) {
-    this.mode = mode;
-    this.meta.mode = mode;
-    const survival = mode === "survival";
-    this.player.canFly = !survival;
-    this.player.flying = false;
-    this.player.hotbar = survival
-      ? this.survivalInventory
-      : this.creativeInventory;
-    this.hud.setSurvival(survival);
-    this.refreshHotbar();
-    this.hud.renderVitals(this.vitals);
-    if (this.breaker) this.breaker.stop();
-
-    const label = document.getElementById("game-mode");
-    if (label) {
-      label.textContent = `Game Mode: ${survival ? "Survival" : "Creative"}`;
-    }
-    if (announce) this.flushSave();
-  }
+  // ------------------------------------------------------------------ hud
 
   private refreshHotbar() {
     this.hud.renderHotbar(this.player.hotbar);
@@ -215,40 +170,6 @@ export default class Game {
     if (slider instanceof HTMLInputElement) slider.value = String(rd);
   }
 
-  private onDeath() {
-    this.player.dead = true;
-    this.player.releaseKeys();
-    this.breaker.stop();
-    this.placing = false;
-    this.player.controls.unlock();
-    const death = document.getElementById("death");
-    if (death) death.style.display = "flex";
-    const cause = document.getElementById("death-cause");
-    if (cause) {
-      cause.textContent = this.player.inLava
-        ? "You tried to swim in lava"
-        : this.player.eyeSubmerged
-        ? "You drowned"
-        : this.player.pos.y < 0
-        ? "You fell out of the world"
-        : "You hit the ground too hard";
-    }
-  }
-
-  private respawn() {
-    const death = document.getElementById("death");
-    if (death) death.style.display = "none";
-    // Vanilla drops the whole inventory on death; items simply vanish here
-    this.survivalInventory.clear();
-    this.vitals.reset();
-    const spawn = this.world.getSpawn();
-    this.player.placeFeet(spawn.x, spawn.y + 1, spawn.z);
-    this.player.dead = false;
-    this.refreshHotbar();
-    this.flushSave();
-    this.lockControls();
-  }
-
   // ----------------------------------------------------------------- menus
 
   initPauseMenu() {
@@ -260,16 +181,12 @@ export default class Game {
     };
 
     click("resume", () => this.lockControls());
-    click("game-mode", () =>
-      this.setMode(this.survival ? "creative" : "survival")
-    );
     click("new-world", () => {
       if (confirm("Create a new world? The current world will be deleted.")) {
         this.newWorld();
       }
     });
     click("github", () => window.open("https://github.com/0kzh/minicraft"));
-    click("respawn", () => this.respawn());
 
     const slider = document.getElementById("render-distance-slider");
     if (slider instanceof HTMLInputElement) {
@@ -290,9 +207,7 @@ export default class Game {
     this.player.controls.addEventListener("unlock", () => {
       this.breaker.stop();
       this.placing = false;
-      if (this.world.initialLoadComplete && !this.player.dead) {
-        this.setPauseVisible(true);
-      }
+      if (this.world.initialLoadComplete) this.setPauseVisible(true);
     });
     this.world.onInitialLoad = () => {
       this.setPauseVisible(true);
@@ -301,7 +216,7 @@ export default class Game {
   }
 
   private lockControls() {
-    if (this.player.dead || !this.world.initialLoadComplete) return;
+    if (!this.world.initialLoadComplete) return;
     try {
       this.player.controls.lock();
     } catch (e) {
@@ -354,7 +269,7 @@ export default class Game {
     );
   }
 
-  /** Persists dirty chunk edits, the player's position and survival progress */
+  /** Persists dirty chunk edits and the player's position */
   private async flushSave() {
     if (!this.world.initialLoadComplete) return;
     const dirty = this.world.dataStore.takeDirty();
@@ -366,13 +281,6 @@ export default class Game {
       z: p.z,
       yaw: look.yaw,
       pitch: look.pitch,
-    };
-    this.meta.mode = this.mode;
-    this.meta.survival = {
-      health: this.vitals.health,
-      food: this.vitals.food,
-      saturation: this.vitals.saturation,
-      inventory: this.survivalInventory.toJSON(),
     };
     this.meta.updatedAt = Date.now();
     await Promise.all([
@@ -408,33 +316,16 @@ export default class Game {
 
     this.player = new Player(this.scene);
     this.player.onHotbarChange = () => this.refreshHotbar();
-    this.player.onExhaustion = (amount) => {
-      if (this.survival) this.vitals.addExhaustion(amount);
-    };
     this.physics = new Physics(this.scene);
     this.hand = new HandRenderer(textures);
 
     this.particles = new Particles(textures, this.world);
     this.scene.add(this.particles.points);
     this.breaker = new BlockBreaker(this.particles);
-    this.scene.add(this.breaker.crack);
-    this.breaker.onBreak = (_x, _y, _z, id) => {
-      if (!this.survival) return;
-      const drop = blockStats(id).drop;
-      if (drop !== null) {
-        this.survivalInventory.add(drop);
-        this.refreshHotbar();
-      }
-    };
 
-    this.vitals.onChange = () => this.hud.renderVitals(this.vitals);
-    this.vitals.onDeath = () => this.onDeath();
-
-    // Compile the crack, particle and hand programs now rather than stalling
-    // the frame the first time a block is hit
-    this.breaker.crack.visible = true;
+    // Compile the particle and hand programs now rather than stalling the
+    // frame the first time a block is hit
     this.renderer.compile(this.scene, this.player.camera);
-    this.breaker.crack.visible = false;
     this.hand.precompile(this.renderer);
   }
 
@@ -477,7 +368,7 @@ export default class Game {
   // ------------------------------------------------------------ interaction
 
   onMouseDown(event: MouseEvent) {
-    if (!this.player.controls.isLocked || this.player.dead) return;
+    if (!this.player.controls.isLocked) return;
     if (event.button === 0) {
       // Minecraft.startAttack swings even when nothing is hit
       this.player.swing();
@@ -493,7 +384,6 @@ export default class Game {
     if (event.button === 2) this.placing = false;
   }
 
-  /** Places the selected block; survival consumes one from the stack */
   private tryPlace() {
     const target = this.player.blockPlacementCoords;
     const id = this.player.activeBlockId;
@@ -506,14 +396,12 @@ export default class Game {
       return;
     if (this.world.addBlock(target.x, target.y, target.z, id)) {
       this.player.swing();
-      this.player.hotbar.consumeSelected();
-      this.refreshHotbar();
     }
   }
 
   private updateInteraction(dt: number) {
-    if (!this.player.controls.isLocked || this.player.dead) return;
-    this.breaker.update(dt, this.player, this.world, !this.survival);
+    if (!this.player.controls.isLocked) return;
+    this.breaker.update(dt, this.player, this.world);
     if (this.placing) {
       this.placeCooldown -= dt;
       if (this.placeCooldown <= 0) {
@@ -585,9 +473,7 @@ export default class Game {
     this.updateAtmosphere();
 
     if (this.world.initialLoadComplete) {
-      this.player.sprintAllowed = !this.survival || this.vitals.canSprint;
       this.physics.update(deltaTime, this.player, this.world);
-      if (this.survival) this.vitals.update(deltaTime, this.player);
       this.updateInteraction(deltaTime);
       this.hand.update(deltaTime, this.player);
     }
@@ -597,7 +483,6 @@ export default class Game {
       this.player.camera,
       this.renderer.getPixelRatio()
     );
-    if (this.survival) this.hud.update(deltaTime, this.vitals);
     if (this.world.initialLoadComplete) {
       this.world.fluids.update(Math.min(deltaTime, 0.25));
       if (currentTime - this.lastSave > this.saveInterval * 1000) {
@@ -628,28 +513,15 @@ export default class Game {
     this.previousTime = currentTime;
   }
 
-  /** World pass with the vanilla hurt roll, then the first-person hand on top */
+  /** World pass, then the first-person hand on top */
   private renderWorldAndHand() {
-    const camera = this.player.camera;
-    const roll = this.survival ? this.vitals.hurtRoll : 0;
-    const look = camera.quaternion.clone();
-    if (roll !== 0) {
-      camera.quaternion.multiply(
-        new THREE.Quaternion().setFromAxisAngle(
-          new THREE.Vector3(0, 0, 1),
-          roll
-        )
-      );
-    }
     this.renderer.clear();
-    this.renderer.render(this.scene, camera);
-    camera.quaternion.copy(look);
+    this.renderer.render(this.scene, this.player.camera);
     if (this.world.initialLoadComplete) {
       this.hand.render(
         this.renderer,
         this.player,
-        this.physics.accumulator / Physics.TICK,
-        roll
+        this.physics.accumulator / Physics.TICK
       );
     }
   }

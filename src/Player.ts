@@ -8,8 +8,8 @@ import audioManager from "./audio/AudioManager";
 import { BlockID } from "./Block";
 import { getBlockDef } from "./Block/blocks";
 import { raycastVoxels } from "./chunk/raycast";
-import { CREATIVE_PALETTE } from "./gameplay/blockStats";
 import { Inventory } from "./gameplay/Inventory";
+import { CREATIVE_PALETTE } from "./gameplay/palette";
 import { AABB, intersects, Physics } from "./Physics";
 import { World } from "./World";
 
@@ -63,6 +63,8 @@ const SNEAK_EYE_HEIGHT = 1.27;
 const BASE_FOV = 70;
 /** Sprinting widens the view by (1.3 + 1) / 2 like vanilla */
 const SPRINT_FOV_MULTIPLIER = 1.15;
+/** `AbstractClientPlayer.getFieldOfViewModifier`: flying widens the view by 10% */
+const FLYING_FOV_MULTIPLIER = 1.1;
 const UNDERWATER_FOV_MULTIPLIER = 0.857;
 /** Double-tapping forward within this window starts sprinting (7 ticks) */
 const SPRINT_DOUBLE_TAP_MS = 350;
@@ -93,22 +95,11 @@ export class Player {
   fluidDepth = 0;
   eyeSubmerged = false;
   jumpCooldown = 0;
-  /** Blocks fallen since last standing on ground */
-  fallDistance = 0;
-  /** Fall distance of the most recent landing, until collected */
-  private landedFall = 0;
 
   isSprinting = false;
   isSneaking = false;
   /** Creative flight */
   flying = false;
-  canFly = false;
-  /** Dead players take no input */
-  dead = false;
-  /** Vanilla `LocalPlayer.aiStep`: false while too hungry to sprint */
-  sprintAllowed = true;
-  /** Vanilla `Player.causeFoodExhaustion` hook */
-  onExhaustion: (amount: number) => void = () => {};
   /** Arm swing progress in ticks; -1 when idle (`LivingEntity.swingTime`) */
   swingTime = -1;
   /** Vanilla `LivingEntity.getCurrentSwingDuration` without haste/fatigue */
@@ -156,7 +147,7 @@ export class Player {
   /** Normal of the targeted face */
   selectedNormal: THREE.Vector3 | null = null;
 
-  /** Active hotbar: the creative palette or the survival inventory */
+  /** Creative palette hotbar */
   hotbar: Inventory = Inventory.creative(CREATIVE_PALETTE);
   onHotbarChange: () => void = () => {};
 
@@ -181,19 +172,6 @@ export class Player {
     window.addEventListener("blur", () => this.releaseKeys());
   }
 
-  /** Fall distance of the last landing, cleared once read */
-  takeFallDistance(): number {
-    const fall = this.landedFall;
-    this.landedFall = 0;
-    return fall;
-  }
-
-  /** Records a landing so fall damage can be applied */
-  land() {
-    this.landedFall = this.fallDistance;
-    this.fallDistance = 0;
-  }
-
   /** Eye position, as rendered this frame */
   get position() {
     return this.camera.position;
@@ -204,13 +182,11 @@ export class Player {
     this.placeFeet(x, y - this.#eyeHeight, z);
   }
 
-  /** Moves the player so its feet are at (x, y, z), resetting motion and fall */
+  /** Moves the player so its feet are at (x, y, z), resetting motion */
   placeFeet(x: number, y: number, z: number) {
     this.pos.set(x, y, z);
     this.prevPos.copy(this.pos);
     this.velocity.set(0, 0, 0);
-    this.fallDistance = 0;
-    this.landedFall = 0;
     this.camera.position.set(x, y + this.#eyeHeight, z);
   }
 
@@ -292,17 +268,13 @@ export class Player {
 
   /** Resolves held keys into sneak/sprint state for this tick */
   tickInput() {
-    if (!this.canFly) this.flying = false;
     const wasSneaking = this.isSneaking;
     this.isSneaking = this.#sneak && !this.inFluid && !this.flying;
     if (this.isSneaking && !wasSneaking) this.isSprinting = false;
 
     const forward = this.#forward && !this.#back;
     const canSprint =
-      forward &&
-      !this.isSneaking &&
-      (!this.inFluid || this.flying) &&
-      (this.sprintAllowed || this.canFly);
+      forward && !this.isSneaking && (!this.inFluid || this.flying);
     if (canSprint && this.#sprintKey) this.isSprinting = true;
     if (!canSprint) this.isSprinting = false;
   }
@@ -328,20 +300,6 @@ export class Player {
   /** Ground speed relative to walking */
   speedMultiplier() {
     return this.isSprinting ? Physics.SPRINT_MULTIPLIER : 1;
-  }
-
-  /**
-   * Vanilla `Player.checkMovementStatistics`: swimming costs 0.01 and
-   * sprinting on the ground 0.1 food exhaustion per block
-   */
-  tickExhaustion() {
-    if (this.flying) return;
-    const dx = this.pos.x - this.prevPos.x;
-    const dz = this.pos.z - this.prevPos.z;
-    const dist = Math.sqrt(dx * dx + dz * dz);
-    if (dist < 1e-6) return;
-    if (this.inFluid) this.onExhaustion(0.01 * dist);
-    else if (this.onGround && this.isSprinting) this.onExhaustion(0.1 * dist);
   }
 
   /** Plays a footstep for roughly every block walked on the ground */
@@ -371,8 +329,8 @@ export class Player {
     this.updateRaycaster(world);
     this.updateDebugPosition();
 
-    // Creative players falling out of the world are dropped back in from above
-    if (this.pos.y < -8 && this.canFly) {
+    // Players falling out of the world are dropped back in from above
+    if (this.pos.y < -8) {
       this.placeFeet(this.pos.x, world.chunkSize.height + 10, this.pos.z);
     }
   }
@@ -421,7 +379,7 @@ export class Player {
       }
     );
 
-    if (!hit || this.dead) {
+    if (!hit) {
       this.selectedCoords = null;
       this.blockPlacementCoords = null;
       this.selectedNormal = null;
@@ -468,7 +426,9 @@ export class Player {
    * while the eyes are under water.
    */
   private updateCameraFOV(dt: number) {
-    const target = this.isSprinting ? SPRINT_FOV_MULTIPLIER : 1;
+    const target =
+      (this.isSprinting ? SPRINT_FOV_MULTIPLIER : 1) *
+      (this.flying ? FLYING_FOV_MULTIPLIER : 1);
     const t = 1 - Math.pow(0.5, dt * Physics.TICK_RATE);
     this.#fovMultiplier += (target - this.#fovMultiplier) * t;
     let fov = BASE_FOV * this.#fovMultiplier;
@@ -489,7 +449,7 @@ export class Player {
   }
 
   private onWheel(event: WheelEvent) {
-    if (!this.controls.isLocked || this.dead || event.deltaY === 0) return;
+    if (!this.controls.isLocked || event.deltaY === 0) return;
     this.selectSlot(this.hotbar.selected + Math.sign(event.deltaY));
   }
 
@@ -504,7 +464,7 @@ export class Player {
   }
 
   onKeyDown(event: KeyboardEvent) {
-    if (event.repeat || !this.controls.isLocked || this.dead) return;
+    if (event.repeat || !this.controls.isLocked) return;
 
     switch (event.code) {
       case "Digit1":
@@ -543,7 +503,7 @@ export class Player {
         break;
       case "Space": {
         const now = performance.now();
-        if (this.canFly && now - this.#lastJumpPress < FLY_DOUBLE_TAP_MS) {
+        if (now - this.#lastJumpPress < FLY_DOUBLE_TAP_MS) {
           this.flying = !this.flying;
           this.#lastJumpPress = 0;
           if (this.flying) this.velocity.y = 0;

@@ -67,9 +67,12 @@ export class Physics {
   /** Vertical kick when swimming into a ledge the player can climb */
   static FLUID_CLIMB_VELOCITY = 0.3;
 
-  /** Creative flight: vanilla `abilities.flyingSpeed` (x2 when sprinting) */
+  /** Creative flight: vanilla `Abilities.flyingSpeed` (x2 when sprinting in `Player.getFlyingSpeed`) */
   static FLY_SPEED = 0.05;
-  static FLY_VERTICAL_ACCELERATION = 0.035;
+  /** `LocalPlayer.aiStep`: jump/sneak add `flyingSpeed * 3` to the vertical motion each tick */
+  static FLY_VERTICAL_ACCELERATION = Physics.FLY_SPEED * 3;
+  /** `Player.travel`: the vertical motion is multiplied by 0.6 every tick while flying */
+  static FLY_VERTICAL_FRICTION = 0.6;
 
   accumulator = 0;
   helpers: THREE.Group;
@@ -121,38 +124,42 @@ export class Physics {
     }
 
     player.tickSprint();
-    player.tickExhaustion();
     player.tickStepSounds(this.blockUnderneath(player, world));
   }
 
-  /** Vanilla `Player.jumpFromGround`: sprint jumps cost 0.2 exhaustion, others 0.05 */
+  /** Vanilla `LivingEntity.jumpFromGround` */
   private jump(player: Player) {
     player.velocity.y = Physics.JUMP_VELOCITY;
     if (player.isSprinting) {
       const yaw = player.yaw;
       player.velocity.x -= Math.sin(yaw) * Physics.SPRINT_JUMP_BOOST;
       player.velocity.z -= Math.cos(yaw) * Physics.SPRINT_JUMP_BOOST;
-      player.onExhaustion(0.2);
-    } else {
-      player.onExhaustion(0.05);
     }
     player.jumpCooldown = Physics.JUMP_COOLDOWN;
   }
 
-  /** Creative flight: no gravity, uniform drag on every axis, jump/sneak to rise/sink */
+  /**
+   * Creative flight, per tick like vanilla:
+   *   aiStep:  vy += (jump - sneak) * flyingSpeed * 3
+   *   travel:  v += input * flyingSpeed (x2 sprinting); move; vx,vz *= 0.91; vy *= 0.6
+   * No gravity applies, and vy's 0.6 drag is what makes climbing snappy:
+   * it reaches its 0.375 blocks/tick (7.5 m/s) top speed within a few ticks.
+   */
   private travelFlying(player: Player, world: World, move: THREE.Vector2) {
+    const v = player.velocity;
+    const lift = (player.ascending ? 1 : 0) - (player.descending ? 1 : 0);
+    if (lift !== 0) v.y += lift * Physics.FLY_VERTICAL_ACCELERATION;
+
     const speed = Physics.FLY_SPEED * (player.isSprinting ? 2 : 1);
     this.accelerate(player, move, speed);
-    const v = player.velocity;
-    if (player.ascending) v.y += Physics.FLY_VERTICAL_ACCELERATION;
-    if (player.descending) v.y -= Physics.FLY_VERTICAL_ACCELERATION;
 
     this.move(player, world);
-    player.fallDistance = 0;
     // Touching down ends flight like vanilla
     if (player.onGround && player.descending) player.flying = false;
 
-    v.multiplyScalar(Physics.AIR_FRICTION);
+    v.x *= Physics.AIR_FRICTION;
+    v.z *= Physics.AIR_FRICTION;
+    v.y *= Physics.FLY_VERTICAL_FRICTION;
   }
 
   private travelOnLand(player: Player, world: World, move: THREE.Vector2) {
@@ -190,7 +197,6 @@ export class Physics {
 
     const startY = player.pos.y;
     this.move(player, world);
-    player.fallDistance = 0;
 
     const v = player.velocity;
     v.x *= friction;
@@ -296,9 +302,6 @@ export class Physics {
       (dz !== 0 && Math.abs(dz - result.dz) > EPSILON);
     const verticalCollision = dy !== result.dy;
     player.onGround = verticalCollision && dy < 0;
-
-    if (result.dy < 0) player.fallDistance -= result.dy;
-    if (player.onGround) player.land();
 
     if (player.horizontalCollision) {
       if (dx !== result.dx) v.x = 0;
