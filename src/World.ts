@@ -69,6 +69,7 @@ export class World extends THREE.Group {
   private chunks = new Map<string, WorldChunk>();
   private generating = 0;
   private lastCenter: ChunkCoord | null = null;
+  private spawnPoint = new THREE.Vector3(32, 0, 32);
   private lastRenderDistance = -1;
   private visibleChunks: ChunkCoord[] = [];
 
@@ -103,7 +104,21 @@ export class World extends THREE.Group {
     }
     this.chunks.clear();
     this.lastCenter = null;
+    this.spawnPoint.set(player.position.x, 0, player.position.z);
+    player.position.y = this.chunkSize.height + 10;
+    player.velocity.set(0, 0, 0);
+    this.initialLoadComplete = false;
+    this.setLoadingScreenVisible(true);
     this.update(player);
+  }
+
+  private setLoadingScreenVisible(visible: boolean) {
+    const menuScreen = document.getElementById("menu");
+    const loadingScreen = document.getElementById("loading");
+    const debugMenu = document.getElementById("debug");
+    if (menuScreen) menuScreen.style.display = visible ? "flex" : "none";
+    if (loadingScreen) loadingScreen.style.display = visible ? "block" : "none";
+    if (debugMenu) debugMenu.style.display = visible ? "none" : "flex";
   }
 
   getChunkKey(x: number, z: number) {
@@ -202,23 +217,17 @@ export class World extends THREE.Group {
     if (this.chunks.size < totalChunks || pending > 0) return;
 
     this.initialLoadComplete = true;
-    const menuScreen = document.getElementById("menu");
-    const debugMenu = document.getElementById("debug");
-    if (menuScreen) {
-      menuScreen.style.display = "none";
-    }
-    if (debugMenu) {
-      debugMenu.style.display = "flex";
-    }
+    this.setLoadingScreenVisible(false);
 
-    const spawn = player.initialPosition.clone();
+    const spawn = this.spawnPoint.clone();
     for (let y = this.chunkSize.height - 1; y > 0; y--) {
-      if (this.getBlock(spawn.x, y, spawn.z) === BlockID.Grass) {
+      if (this.isSolid(Math.floor(spawn.x), y, Math.floor(spawn.z))) {
         spawn.y = y;
         break;
       }
     }
     player.position.set(spawn.x, spawn.y + 10, spawn.z);
+    player.velocity.set(0, 0, 0);
     player.controls.lock();
   }
 
