@@ -178,7 +178,7 @@ BIOMES[Biome.Mountains] = def({
 });
 BIOMES[Biome.SnowyPeaks] = def({
   name: "snowy_peaks",
-  top: BlockID.Snow,
+  top: BlockID.Stone,
   filler: BlockID.Stone,
   fillerDepth: 0,
   snowy: true,

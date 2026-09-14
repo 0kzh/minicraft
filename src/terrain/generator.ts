@@ -471,7 +471,7 @@ export function generateChunkData(
       const veg = params.vegetation.density;
       if (def.snowy) {
         // Cold biomes are dusted with a thin snow layer rather than full blocks
-        if (at(lx, y + 1, lz) === BlockID.Air)
+        if (surface !== BlockID.Snow && at(lx, y + 1, lz) === BlockID.Air)
           put(lx, y + 1, lz, BlockID.SnowLayer);
       } else if (surface === BlockID.Sand) {
         if (plant < def.cactusChance * veg) {
@@ -517,6 +517,12 @@ function surfaceBlock(col: Column, sea: number): BlockID {
   if (col.biome === Biome.Mountains) {
     // Grass clings to the gentler lower slopes
     if (col.height < 98 && col.surface > 0.25) top = BlockID.Grass;
+  }
+  if (col.biome === Biome.SnowyPeaks) {
+    // Peaks are bare stone under the snow cover; full snow blocks only
+    // build up in patches on the gentler ground (vanilla `jagged_peaks`
+    // keeps stone on steep faces)
+    if (col.surface > 0.45) top = BlockID.Snow;
   }
   if (def.snowy && top === BlockID.Grass) top = BlockID.SnowGrass;
   return top;
