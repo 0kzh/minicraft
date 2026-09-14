@@ -80,6 +80,7 @@ export const buildChunkMesh = (
     m.uvs.buffer,
     m.layers.buffer,
     m.flags.buffer,
+    m.lights.buffer,
     m.indices.buffer,
   ]);
   return transfer(mesh, buffers);

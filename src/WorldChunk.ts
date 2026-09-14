@@ -108,19 +108,9 @@ export class WorldChunk extends THREE.Group {
 
     // Copy so the worker owns its own snapshot of the voxel data
     const snapshot: ChunkNeighborhood = {
-      center: neighborhood.center.slice(),
-      negX: neighborhood.negX?.slice() ?? null,
-      posX: neighborhood.posX?.slice() ?? null,
-      negZ: neighborhood.negZ?.slice() ?? null,
-      posZ: neighborhood.posZ?.slice() ?? null,
+      chunks: neighborhood.chunks.map((d) => d?.slice() ?? null),
     };
-    const buffers = [
-      snapshot.center,
-      snapshot.negX,
-      snapshot.posX,
-      snapshot.negZ,
-      snapshot.posZ,
-    ].flatMap((d) => (d ? [d.buffer] : []));
+    const buffers = snapshot.chunks.flatMap((d) => (d ? [d.buffer] : []));
     const mesh = await this.pool.run((api) =>
       api.buildChunkMesh(this.size, transfer(snapshot, buffers))
     );
@@ -171,6 +161,10 @@ export class WorldChunk extends THREE.Group {
     geometry.setAttribute(
       "aFlags",
       new THREE.BufferAttribute(buffers.flags, 1)
+    );
+    geometry.setAttribute(
+      "aLight",
+      new THREE.BufferAttribute(buffers.lights, 2, true)
     );
     geometry.setIndex(new THREE.BufferAttribute(buffers.indices, 1));
     geometry.boundingSphere = new THREE.Sphere(

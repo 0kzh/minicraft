@@ -53,6 +53,10 @@ export type BlockDef = {
   passable: boolean;
   /** Rendered at full brightness regardless of lighting */
   emissive: boolean;
+  /** Block light emitted (0-15) */
+  lightEmission: number;
+  /** Light lost when passing through this block (0 = clear, 15 = opaque) */
+  lightOpacity: number;
   /** Skip faces between two blocks of this same type (e.g. glass, water) */
   cullSelf: boolean;
   /** Texture layer per face: +X, -X, +Y, -Y, +Z, -Z */
@@ -93,6 +97,8 @@ const cube = (
   opaque: true,
   passable: false,
   emissive: false,
+  lightEmission: 0,
+  lightOpacity: 15,
   cullSelf: true,
   faces: faces(spec),
   uiTexture,
@@ -113,6 +119,8 @@ const cross = (
   opaque: false,
   passable: true,
   emissive: false,
+  lightEmission: 0,
+  lightOpacity: 0,
   cullSelf: false,
   faces: faces(texture),
   uiTexture,
@@ -128,6 +136,8 @@ const defs: BlockDef[] = [
     opaque: false,
     passable: true,
     emissive: false,
+    lightEmission: 0,
+    lightOpacity: 0,
     cullSelf: true,
     faces: [0, 0, 0, 0, 0, 0],
     uiTexture: "",
@@ -179,6 +189,7 @@ const defs: BlockDef[] = [
     {
       layer: RenderLayer.Cutout,
       opaque: false,
+      lightOpacity: 1,
       cullSelf: false,
     }
   ),
@@ -206,7 +217,7 @@ const defs: BlockDef[] = [
     "redstone_lamp",
     "textures/redstone_lamp_block.png",
     "stone",
-    { emissive: true }
+    { emissive: true, lightEmission: 15 }
   ),
   cube(
     BlockID.StoneBrick,

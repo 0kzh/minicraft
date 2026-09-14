@@ -3,22 +3,27 @@ import * as THREE from "three";
 const vertexShader = /* glsl */ `
   in float aLayer;
   in float aFlags;
+  in vec2 aLight;
 
   out vec2 vUv;
   out float vLayer;
   out float vShade;
   out float vEmissive;
+  out vec2 vLight;
 
   #include <fog_pars_vertex>
 
   // Per-face directional shading: +X, -X, +Y, -Y, +Z, -Z
-  const float FACE_SHADE[6] = float[6](0.8, 0.8, 1.0, 0.5, 0.6, 0.6);
+  const float FACE_SHADE[6] = float[6](0.6, 0.6, 1.0, 0.5, 0.8, 0.8);
 
   void main() {
     vUv = uv;
     vLayer = aLayer;
+    vLight = aLight;
     int flags = int(aFlags + 0.5);
-    vShade = FACE_SHADE[flags & 7];
+    // Ambient occlusion: 0..3 -> 0.4..1.0
+    float ao = 0.4 + float((flags >> 4) & 3) * 0.2;
+    vShade = FACE_SHADE[flags & 7] * ao;
     vEmissive = float((flags >> 3) & 1);
 
     vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
@@ -33,15 +38,30 @@ const fragmentShader = /* glsl */ `
 
   uniform sampler2DArray uAtlas;
   uniform float uSunLight;
-  uniform float uAmbient;
   uniform bool uWireframe;
 
   in vec2 vUv;
   in float vLayer;
   in float vShade;
   in float vEmissive;
+  in vec2 vLight;
 
   #include <fog_pars_fragment>
+
+  // Minecraft's light-level brightness curve: 0 -> 0, 0.5 -> 0.2, 1 -> 1
+  float brightness(float level) {
+    return level / (4.0 - 3.0 * level);
+  }
+
+  // Day/night lightmap: cool sky light scaled by the sun, warm block light
+  vec3 lightmap(float sky, float block) {
+    float skyB = brightness(sky) * (uSunLight * 0.8 + 0.2);
+    float blockB = brightness(block);
+    vec3 skyColor = mix(vec3(0.45, 0.55, 1.0), vec3(1.0), uSunLight);
+    vec3 blockColor = vec3(1.0, blockB * 0.6 + 0.4, blockB * blockB * 0.6 + 0.4);
+    vec3 c = skyB * skyColor + blockB * blockColor;
+    return clamp(c, 0.0, 1.0) * 0.96 + 0.03;
+  }
 
   void main() {
     vec4 texel = uWireframe
@@ -51,8 +71,8 @@ const fragmentShader = /* glsl */ `
       if (texel.a < 0.5) discard;
     #endif
 
-    float light = max(uAmbient, uSunLight) * vShade;
-    light = max(light, vEmissive);
+    vec3 light = lightmap(vLight.x, vLight.y) * vShade;
+    light = max(light, vec3(vEmissive));
     gl_FragColor = vec4(texel.rgb * light, 1.0);
 
     #include <fog_fragment>
@@ -63,7 +83,6 @@ const fragmentShader = /* glsl */ `
 export type ChunkUniforms = {
   uAtlas: THREE.IUniform<THREE.DataArrayTexture | null>;
   uSunLight: THREE.IUniform<number>;
-  uAmbient: THREE.IUniform<number>;
   uWireframe: THREE.IUniform<boolean>;
 };
 
@@ -80,7 +99,6 @@ export class ChunkMaterials {
     this.uniforms = {
       uAtlas: { value: atlas },
       uSunLight: { value: 1 },
-      uAmbient: { value: 0.25 },
       uWireframe: { value: false },
     };
 
