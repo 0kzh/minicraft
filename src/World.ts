@@ -12,6 +12,7 @@ import {
 import { ChunkMaterials } from "./chunk/ChunkMaterial";
 import { MAX_LIGHT } from "./chunk/lighting";
 import { DataStore } from "./DataStore";
+import { FluidSim, FluidWorld } from "./fluids/FluidSim";
 import { Player } from "./Player";
 import { WorkerPool } from "./WorkerPool";
 import { WorldChunk } from "./WorldChunk";
@@ -19,9 +20,8 @@ import { WorldParams } from "./WorldParams";
 
 type ChunkCoord = { x: number; z: number };
 
-export class World extends THREE.Group {
+export class World extends THREE.Group implements FluidWorld {
   scene: THREE.Scene;
-  seed: number;
   renderDistance = 8;
   chunkSize: ChunkSize = {
     width: 16,
@@ -61,6 +61,12 @@ export class World extends THREE.Group {
 
   readonly pool = new WorkerPool();
   readonly materials: ChunkMaterials;
+  readonly fluids = new FluidSim(this);
+
+  /** Where the player is put once the first chunks are in; null = find land */
+  restorePosition: THREE.Vector3 | null = null;
+  /** Called once the initial chunks around the spawn are loaded and meshed */
+  onInitialLoad: (() => void) | null = null;
 
   private chunks = new Map<string, WorldChunk>();
   private generating = 0;
@@ -71,7 +77,7 @@ export class World extends THREE.Group {
 
   constructor(seed = 0, scene: THREE.Scene, materials: ChunkMaterials) {
     super();
-    this.seed = seed;
+    this.params.seed = seed;
     this.scene = scene;
     this.materials = materials;
     this.matrixAutoUpdate = false;
@@ -90,18 +96,27 @@ export class World extends THREE.Group {
     return this.chunks.size;
   }
 
+  get seed() {
+    return this.params.seed;
+  }
+
+  set seed(value: number) {
+    this.params.seed = value;
+  }
+
   /**
-   * Clears existing world data and re-generates everything
+   * Clears existing world data and re-generates everything around `spawn`
    */
-  regenerate(player: Player) {
+  regenerate(player: Player, spawn = new THREE.Vector3(32, 0, 32)) {
     for (const chunk of this.chunks.values()) {
       chunk.dispose();
       this.remove(chunk);
     }
     this.chunks.clear();
     this.lastCenter = null;
-    this.spawnPoint.set(player.position.x, 0, player.position.z);
-    player.position.y = this.chunkSize.height + 10;
+    this.restorePosition = null;
+    this.spawnPoint.set(spawn.x, 0, spawn.z);
+    player.position.set(spawn.x, this.chunkSize.height + 10, spawn.z);
     player.velocity.set(0, 0, 0);
     this.initialLoadComplete = false;
     this.setLoadingScreenVisible(true);
@@ -111,10 +126,16 @@ export class World extends THREE.Group {
   private setLoadingScreenVisible(visible: boolean) {
     const menuScreen = document.getElementById("menu");
     const loadingScreen = document.getElementById("loading");
-    const debugMenu = document.getElementById("debug");
     if (menuScreen) menuScreen.style.display = visible ? "flex" : "none";
     if (loadingScreen) loadingScreen.style.display = visible ? "block" : "none";
-    if (debugMenu) debugMenu.style.display = visible ? "none" : "flex";
+  }
+
+  /** Generates around a saved position and puts the player back there */
+  restore(player: Player, position: THREE.Vector3) {
+    this.restorePosition = position.clone();
+    this.spawnPoint.set(position.x, 0, position.z);
+    player.position.copy(position);
+    player.velocity.set(0, 0, 0);
   }
 
   getChunkKey(x: number, z: number) {
@@ -215,10 +236,14 @@ export class World extends THREE.Group {
     this.initialLoadComplete = true;
     this.setLoadingScreenVisible(false);
 
-    const spawn = this.findSpawn(this.spawnPoint);
-    player.position.set(spawn.x, spawn.y + 10, spawn.z);
+    if (this.restorePosition) {
+      player.position.copy(this.restorePosition);
+    } else {
+      const spawn = this.findSpawn(this.spawnPoint);
+      player.position.set(spawn.x, spawn.y + 10, spawn.z);
+    }
     player.velocity.set(0, 0, 0);
-    player.controls.lock();
+    this.onInitialLoad?.();
   }
 
   /**
@@ -370,6 +395,21 @@ export class World extends THREE.Group {
    * Sets the block at world (x, y, z) and remeshes the affected chunk(s)
    */
   setBlock(x: number, y: number, z: number, id: BlockID): boolean {
+    return this.writeBlock(x, y, z, id, true);
+  }
+
+  /** Sets a block, leaving the remesh to the next scheduled update */
+  setBlockDeferred(x: number, y: number, z: number, id: BlockID): boolean {
+    return this.writeBlock(x, y, z, id, false);
+  }
+
+  private writeBlock(
+    x: number,
+    y: number,
+    z: number,
+    id: BlockID,
+    immediate: boolean
+  ): boolean {
     const coords = this.worldToChunkCoords(x, y, z);
     const chunk = this.getChunk(coords.chunk.x, coords.chunk.z);
     if (!chunk?.loaded) return false;
@@ -379,7 +419,7 @@ export class World extends THREE.Group {
 
     // Remesh the edited chunk immediately so edits feel instant; neighbours
     // that the change can light or shade follow on the next update
-    chunk.remesh(this.getNeighborhood(chunk));
+    if (immediate) chunk.remesh(this.getNeighborhood(chunk));
     const w = this.chunkSize.width;
     const reach = MAX_LIGHT + 1;
     for (const [dx, dz] of NEIGHBOR_OFFSETS) {
@@ -401,6 +441,7 @@ export class World extends THREE.Group {
     if (existing !== BlockID.Air && !getBlockDef(existing).fluid) return;
     if (this.setBlock(x, y, z, block)) {
       this.playBlockSound(block);
+      this.fluids.scheduleAround(x, y, z);
     }
   }
 
@@ -412,6 +453,7 @@ export class World extends THREE.Group {
 
     if (this.setBlock(x, y, z, BlockID.Air)) {
       this.playBlockSound(id);
+      this.fluids.scheduleAround(x, y, z);
     }
 
     // Plants above lose their support

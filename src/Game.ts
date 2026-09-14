@@ -1,15 +1,20 @@
 import TWEEN from "@tweenjs/tween.js";
 import { Howl, Howler } from "howler";
 import * as THREE from "three";
-import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import Stats from "three/examples/jsm/libs/stats.module";
 
 import audioManager from "./audio/AudioManager";
 import { BlockID } from "./Block";
 import { getBlockDef } from "./Block/blocks";
-import { loadBlockTextureArray } from "./Block/textures";
+import { buildBlockIcons, loadBlockTextures } from "./Block/textures";
 import { ChunkMaterials } from "./chunk/ChunkMaterial";
 import { createUI } from "./GUI";
+import {
+  randomSeed,
+  SAVE_VERSION,
+  WorldMeta,
+  WorldStorage,
+} from "./persistence/WorldStorage";
 import { Physics } from "./Physics";
 import { Player } from "./Player";
 import { numberWithCommas } from "./util";
@@ -43,11 +48,17 @@ const fragmentShader = `
 export default class Game {
   private renderer!: THREE.WebGLRenderer;
   private scene!: THREE.Scene;
-  private orbitCamera!: THREE.PerspectiveCamera;
 
-  private controls!: OrbitControls;
   private stats!: any;
+  private gui: ReturnType<typeof createUI> | null = null;
+  private debugVisible = false;
   private clock!: THREE.Clock;
+
+  private storage!: WorldStorage;
+  private meta!: WorldMeta;
+  private lastSave = 0;
+  /** Seconds between autosaves of edits and the player position */
+  private saveInterval = 3;
 
   private sunSettings = {
     distance: 400,
@@ -58,8 +69,8 @@ export default class Game {
   private sky!: THREE.Mesh<THREE.BufferGeometry, THREE.ShaderMaterial>;
   private sun!: THREE.DirectionalLight;
   private sunHelper!: THREE.DirectionalLightHelper;
-  private world!: World;
-  private player!: Player;
+  world!: World;
+  player!: Player;
   private physics!: Physics;
 
   private previousTime = 0;
@@ -72,23 +83,95 @@ export default class Game {
   constructor() {
     this.previousTime = performance.now();
     this.clock = new THREE.Clock();
-    this.initMainMenu();
+    this.start();
   }
 
-  initMainMenu() {
-    const mainMenu = document.getElementById("main-menu");
+  /**
+   * Boots straight into the saved world (or a brand new one with a random
+   * seed) and shows the pause menu once the terrain around the player is in.
+   */
+  async start() {
     const loadingScreen = document.getElementById("loading");
-    const startGameButton = document.getElementById("start-game");
-    startGameButton?.addEventListener("click", async () => {
-      if (mainMenu) mainMenu.style.display = "none";
-      if (loadingScreen) loadingScreen.style.display = "block";
-      audioManager.play("gui.button.press");
+    if (loadingScreen) loadingScreen.style.display = "block";
 
-      const atlas = await loadBlockTextureArray();
-      this.initScene(new ChunkMaterials(atlas));
-      this.initStats();
-      this.initListeners();
-      this.initAudio();
+    const [textures, storage] = await Promise.all([
+      loadBlockTextures(),
+      WorldStorage.open(),
+    ]);
+    buildBlockIcons(textures.icons);
+    this.storage = storage;
+
+    const saved = await storage.loadMeta();
+    this.meta = saved ?? Game.newMeta();
+    this.initScene(new ChunkMaterials(textures), this.meta.seed);
+
+    if (saved) {
+      this.world.dataStore.load(await storage.loadChunks());
+      if (saved.player) {
+        const { x, y, z, yaw, pitch } = saved.player;
+        this.world.restore(this.player, new THREE.Vector3(x, y, z));
+        this.player.setLook(yaw, pitch);
+      }
+    } else {
+      await storage.saveMeta(this.meta);
+    }
+
+    this.initStats();
+    this.initListeners();
+    this.initPauseMenu();
+    this.initAudio();
+    this.updateSeedLabel();
+    this.draw();
+  }
+
+  private static newMeta(): WorldMeta {
+    const now = Date.now();
+    return {
+      version: SAVE_VERSION,
+      seed: randomSeed(),
+      createdAt: now,
+      updatedAt: now,
+    };
+  }
+
+  /** Wipes the save and generates a fresh world from a random seed */
+  async newWorld() {
+    await this.flushSave();
+    this.meta = Game.newMeta();
+    this.world.dataStore.clear();
+    await this.storage.clear();
+    await this.storage.saveMeta(this.meta);
+    this.world.seed = this.meta.seed;
+    this.updateSeedLabel();
+    this.setPauseVisible(false);
+    this.world.regenerate(this.player);
+  }
+
+  /** Regenerates with the current (debug-tweaked) params, discarding edits */
+  async regenerateWorld() {
+    await this.flushSave();
+    this.meta = { ...Game.newMeta(), seed: this.world.seed };
+    this.world.dataStore.clear();
+    await this.storage.clear();
+    await this.storage.saveMeta(this.meta);
+    this.updateSeedLabel();
+    this.world.regenerate(this.player);
+  }
+
+  initPauseMenu() {
+    const resume = document.getElementById("resume");
+    resume?.addEventListener("click", () => {
+      audioManager.play("gui.button.press");
+      this.player.controls.lock();
+    });
+
+    const newWorld = document.getElementById("new-world");
+    newWorld?.addEventListener("click", () => {
+      audioManager.play("gui.button.press");
+      if (!confirm("Create a new world? The current world will be deleted.")) {
+        return;
+      }
+      this.newWorld();
     });
 
     const githubButton = document.getElementById("github");
@@ -97,26 +180,86 @@ export default class Game {
       window.open("https://github.com/0kzh/minicraft");
     });
 
-    const websiteButton = document.getElementById("website");
-    websiteButton?.addEventListener("click", () => {
-      audioManager.play("gui.button.press");
-      window.open("https://kelvinzhang.com");
+    this.player.controls.addEventListener("lock", () =>
+      this.setPauseVisible(false)
+    );
+    this.player.controls.addEventListener("unlock", () => {
+      if (this.world.initialLoadComplete) this.setPauseVisible(true);
     });
+    this.world.onInitialLoad = () => {
+      this.setPauseVisible(true);
+      this.flushSave();
+    };
+  }
+
+  private setPauseVisible(visible: boolean) {
+    const pause = document.getElementById("pause");
+    if (pause) pause.style.display = visible ? "flex" : "none";
+  }
+
+  private updateSeedLabel() {
+    const label = document.getElementById("seed-label");
+    if (label) label.textContent = `Seed: ${this.meta.seed}`;
+    const debugSeed = document.getElementById("world-seed");
+    if (debugSeed) debugSeed.textContent = `seed: ${this.meta.seed}`;
+  }
+
+  /** Shows/hides the debug overlay, FPS panel and tuning controls (F3) */
+  toggleDebug() {
+    this.debugVisible = !this.debugVisible;
+    const debug = document.getElementById("debug");
+    if (debug) debug.style.display = this.debugVisible ? "flex" : "none";
+    if (this.stats) {
+      this.stats.dom.style.display = this.debugVisible ? "block" : "none";
+    }
+    if (this.debugVisible) {
+      if (!this.gui) this.gui = this.createGUI();
+      this.gui.show();
+    } else {
+      this.gui?.hide();
+    }
+  }
+
+  private createGUI() {
+    return createUI(
+      this.world,
+      this.player,
+      this.physics,
+      this.fogRange,
+      this.sunSettings,
+      this.sunHelper,
+      () => this.regenerateWorld()
+    );
+  }
+
+  /** Persists dirty chunk edits and the player's position */
+  private async flushSave() {
+    if (!this.world.initialLoadComplete) return;
+    const dirty = this.world.dataStore.takeDirty();
+    const look = this.player.getLook();
+    const p = this.player.position;
+    this.meta.player = {
+      x: p.x,
+      y: p.y,
+      z: p.z,
+      yaw: look.yaw,
+      pitch: look.pitch,
+    };
+    this.meta.updatedAt = Date.now();
+    await Promise.all([
+      dirty.length ? this.storage.saveChunks(dirty) : undefined,
+      this.storage.saveMeta(this.meta),
+    ]);
   }
 
   initStats() {
     this.stats = new (Stats as any)();
+    this.stats.dom.style.display = "none";
     document.body.appendChild(this.stats.dom);
   }
 
-  initScene(chunkMaterials: ChunkMaterials) {
+  initScene(chunkMaterials: ChunkMaterials, seed: number) {
     this.scene = new THREE.Scene();
-
-    this.orbitCamera = new THREE.PerspectiveCamera(
-      75,
-      window.innerWidth / window.innerHeight
-    );
-    this.orbitCamera.position.set(-32, 64, -32);
 
     this.renderer = new THREE.WebGLRenderer();
 
@@ -125,13 +268,6 @@ export default class Game {
     this.renderer.setClearColor(0x80abfe);
 
     document.body.appendChild(this.renderer.domElement);
-
-    this.controls = new OrbitControls(
-      this.orbitCamera,
-      this.renderer.domElement
-    );
-    this.controls.target.set(0, 0, 0);
-    this.controls.update();
 
     // Skybox
     const uniforms = {
@@ -172,24 +308,13 @@ export default class Game {
     ambient.intensity = 0.2;
     this.scene.add(ambient);
 
-    this.world = new World(0, this.scene, chunkMaterials);
+    this.world = new World(seed, this.scene, chunkMaterials);
     this.scene.add(this.world);
 
     this.player = new Player(this.scene);
     this.physics = new Physics(this.scene);
 
     this.updateSunPosition(0);
-
-    createUI(
-      this.world,
-      this.player,
-      this.physics,
-      this.fogRange,
-      this.sunSettings,
-      this.sunHelper
-    );
-
-    this.draw();
   }
 
   initAudio() {
@@ -231,11 +356,21 @@ export default class Game {
   initListeners() {
     window.addEventListener("resize", this.onWindowResize.bind(this), false);
     document.addEventListener("mousedown", this.onMouseDown.bind(this), false);
+    document.addEventListener("contextmenu", (e) => e.preventDefault());
+    document.addEventListener("keydown", (e) => {
+      if (e.code === "F3") {
+        e.preventDefault();
+        this.toggleDebug();
+      }
+    });
+    // Save before the tab goes away; IndexedDB writes started here complete
+    window.addEventListener("pagehide", () => this.flushSave());
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "hidden") this.flushSave();
+    });
   }
 
   onWindowResize() {
-    this.orbitCamera.aspect = window.innerWidth / window.innerHeight;
-    this.orbitCamera.updateProjectionMatrix();
     this.player.camera.aspect = window.innerWidth / window.innerHeight;
     this.player.camera.updateProjectionMatrix();
     this.renderer.setSize(window.innerWidth, window.innerHeight);
@@ -374,8 +509,17 @@ export default class Game {
 
     this.updateSkyColor();
 
-    this.physics.update(deltaTime, this.player, this.world);
+    if (this.world.initialLoadComplete) {
+      this.physics.update(deltaTime, this.player, this.world);
+    }
     this.world.update(this.player);
+    if (this.world.initialLoadComplete) {
+      this.world.fluids.update(Math.min(deltaTime, 0.25));
+      if (currentTime - this.lastSave > this.saveInterval * 1000) {
+        this.lastSave = currentTime;
+        this.flushSave();
+      }
+    }
 
     // update triangle count
     const triangleCount = document.getElementById("triangle-count");
@@ -392,21 +536,11 @@ export default class Game {
       )}`;
     }
 
-    // if (this.controls) {
-    //   this.controls.autoRotate = false;
-    //   this.controls.autoRotateSpeed = 2.0;
-    // }
-
     if (this.stats) this.stats.update();
-
-    if (this.controls) this.controls.update();
 
     TWEEN.update();
 
-    this.renderer.render(
-      this.scene,
-      this.player.controls.isLocked ? this.player.camera : this.orbitCamera
-    );
+    this.renderer.render(this.scene, this.player.camera);
 
     this.previousTime = currentTime;
   }

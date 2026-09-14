@@ -28,12 +28,25 @@ export enum BlockID {
   DeadBush = 26,
   GoldOre = 27,
   DiamondOre = 28,
+  /**
+   * Flowing liquids occupy 16 ids each: FlowingWater + (level - 1) for
+   * levels 1-7 (thinner as the level rises), + FLUID_FALLING for columns
+   * fed from above. Water/Lava themselves are level-0 sources.
+   */
+  FlowingWater = 200,
+  FlowingLava = 216,
 }
 
+export const FLUID_FALLING = 8;
+export const FLUID_MAX_LEVEL = 7;
+
 /**
- * Ore veins per chunk: number of vein attempts, blob size and the y range
- * (inclusive) they may spawn in. Roughly follows Minecraft's distribution
- * scaled to a 128-block world.
+ * Ore veins per chunk: vein attempts, blob size and inclusive y range.
+ * The world is 128 tall with bedrock at y=0, so the vanilla 1.18+ Java bands
+ * (which span y=-64..320) are compressed rather than copied: vanilla puts
+ * diamond deepest (peak at -64, none above 16), gold below 32 (peak -16),
+ * iron peaking at 16 and coal throughout the upper world (peak 96). Vein
+ * sizes follow vanilla's 17/9/9/4 order of magnitude.
  */
 export const oreConfig = {
   coal: { id: BlockID.CoalOre, attempts: 12, size: 12, minY: 5, maxY: 120 },

@@ -1,5 +1,10 @@
 import * as THREE from "three";
 
+import { BlockTextures } from "../Block/textures";
+
+/** Max animated texture layers the shader cycles */
+const MAX_ANIMATIONS = 4;
+
 const vertexShader = /* glsl */ `
   in float aLayer;
   in float aFlags;
@@ -12,6 +17,8 @@ const vertexShader = /* glsl */ `
   out vec2 vLight;
 
   uniform float uTime;
+  // (base layer, first frame layer, frame count, fps) per animated texture
+  uniform vec4 uAnim[MAX_ANIMATIONS];
 
   #include <fog_pars_vertex>
 
@@ -20,11 +27,13 @@ const vertexShader = /* glsl */ `
 
   void main() {
     vUv = uv;
-    #ifdef TRANSLUCENT
-      // Slow drift of the liquid texture
-      vUv += vec2(uTime * 0.04, uTime * 0.025);
-    #endif
     vLayer = aLayer;
+    for (int i = 0; i < MAX_ANIMATIONS; i++) {
+      if (uAnim[i].z > 0.0 && abs(aLayer - uAnim[i].x) < 0.5) {
+        float frame = mod(floor(uTime * uAnim[i].w), uAnim[i].z);
+        vLayer = uAnim[i].y + frame;
+      }
+    }
     vLight = aLight;
     int flags = int(aFlags + 0.5);
     // Ambient occlusion: 0..3 -> 0.4..1.0
@@ -98,6 +107,7 @@ export type ChunkUniforms = {
   uWireframe: THREE.IUniform<boolean>;
   uTime: THREE.IUniform<number>;
   uAlpha: THREE.IUniform<number>;
+  uAnim: THREE.IUniform<THREE.Vector4[]>;
 };
 
 type Variant = "opaque" | "cutout" | "translucent";
@@ -113,13 +123,20 @@ export class ChunkMaterials {
   readonly cutout: THREE.ShaderMaterial;
   readonly translucent: THREE.ShaderMaterial;
 
-  constructor(atlas: THREE.DataArrayTexture) {
+  constructor(textures: BlockTextures) {
+    const anim = Array.from({ length: MAX_ANIMATIONS }, (_, i) => {
+      const a = textures.animations[i];
+      return a
+        ? new THREE.Vector4(a.layer, a.first, a.frames, a.fps)
+        : new THREE.Vector4(-1, 0, 0, 0);
+    });
     this.uniforms = {
-      uAtlas: { value: atlas },
+      uAtlas: { value: textures.array },
       uSunLight: { value: 1 },
       uWireframe: { value: false },
       uTime: { value: 0 },
       uAlpha: { value: 0.72 },
+      uAnim: { value: anim },
     };
 
     const make = (variant: Variant) =>
@@ -131,12 +148,14 @@ export class ChunkMaterials {
           THREE.UniformsLib.fog,
           this.uniforms,
         ]),
-        defines:
-          variant === "cutout"
+        defines: {
+          MAX_ANIMATIONS,
+          ...(variant === "cutout"
             ? { CUTOUT: "" }
             : variant === "translucent"
             ? { TRANSLUCENT: "" }
-            : {},
+            : {}),
+        },
         fog: true,
         side: variant === "opaque" ? THREE.FrontSide : THREE.DoubleSide,
         transparent: variant === "translucent",

@@ -1,7 +1,7 @@
 import * as THREE from "three";
 
 import { BlockID } from "./Block";
-import { getBlockDef } from "./Block/blocks";
+import { fluidHeight, getBlockDef } from "./Block/blocks";
 import { Player } from "./Player";
 import { World } from "./World";
 
@@ -40,6 +40,9 @@ export class Physics {
   // Velocity damping per second in fluids
   static FLUID_DRAG = 3.5;
   static FLUID_SINK_SPEED = -2.5;
+  // Upward kick when swimming against a block whose top is within reach,
+  // letting the player climb out of water (Minecraft's 0.3 blocks/tick)
+  static FLUID_CLIMB_SPEED = 7;
 
   // Physics simulation rate
   simulationRate = 250;
@@ -74,20 +77,56 @@ export class Physics {
       }
       player.applyInputs(this.stepSize, blockUnderneath);
       this.detectCollisions(player, world);
+      if (player.inFluid && player.horizontalCollision) {
+        this.climbOutOfFluid(player, world);
+      }
       this.accumulator -= this.stepSize;
     }
 
     player.update(world);
   }
 
-  /** True when the player's lower body is inside water or lava */
+  /**
+   * True when the player's feet or torso are inside water or lava, taking
+   * the liquid's surface height into account so shallow puddles don't swim.
+   */
   isInFluid(player: Player, world: World) {
-    const id = world.getBlock(
-      Math.floor(player.position.x),
-      Math.floor(player.position.y - player.height + 0.4),
-      Math.floor(player.position.z)
-    );
-    return id !== undefined && getBlockDef(id).fluid;
+    const x = Math.floor(player.position.x);
+    const z = Math.floor(player.position.z);
+    const feet = player.position.y - player.height + 0.1;
+    const torso = player.position.y - player.height * 0.5;
+    return this.fluidAt(world, x, feet, z) || this.fluidAt(world, x, torso, z);
+  }
+
+  private fluidAt(world: World, x: number, y: number, z: number) {
+    const by = Math.floor(y);
+    const id = world.getBlock(x, by, z);
+    if (id === undefined) return false;
+    const def = getBlockDef(id);
+    if (!def.fluid) return false;
+    const above = world.getBlock(x, by + 1, z);
+    if (
+      above !== undefined &&
+      getBlockDef(above).fluidSource === def.fluidSource
+    )
+      return true;
+    return y - by < fluidHeight(def);
+  }
+
+  /**
+   * Swimming into a block whose top is just above the water: hop up if the
+   * space one block higher is free, like Minecraft's liquid edge climb.
+   */
+  private climbOutOfFluid(player: Player, world: World) {
+    if (player.input.lengthSq() === 0) return;
+    const feet = player.position.y - player.height;
+    const x = Math.floor(player.position.x);
+    const z = Math.floor(player.position.z);
+    const top = Math.floor(feet) + 1;
+    for (let y = top; y < top + Math.ceil(player.height); y++) {
+      if (world.isSolid(x, y, z)) return;
+    }
+    player.velocity.y = Math.max(player.velocity.y, Physics.FLUID_CLIMB_SPEED);
   }
 
   getBlockUnderneath(player: Player, world: World) {
@@ -100,6 +139,7 @@ export class Physics {
 
   detectCollisions(player: Player, world: World) {
     player.onGround = false;
+    player.horizontalCollision = false;
     this.helpers.clear();
 
     const candidates = this.broadPhase(player, world);
@@ -235,6 +275,9 @@ export class Physics {
       // If player is stuck underneath a block, boost him up
       if (collision.normal.y < 0) {
         player.velocity.y += 10;
+      }
+      if (collision.normal.y === 0) {
+        player.horizontalCollision = true;
       }
 
       // Get the magnitude of player's velocity along collision normal

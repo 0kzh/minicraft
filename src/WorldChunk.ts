@@ -81,20 +81,10 @@ export class WorldChunk extends THREE.Group {
    */
   loadPlayerChanges() {
     if (!this.data) return;
-    for (let y = 0; y < this.size.height; y++) {
-      for (let z = 0; z < this.size.width; z++) {
-        for (let x = 0; x < this.size.width; x++) {
-          if (this.dataStore.contains(this.chunkX, this.chunkZ, x, y, z)) {
-            this.data[blockIndex(this.size, x, y, z)] = this.dataStore.get(
-              this.chunkX,
-              this.chunkZ,
-              x,
-              y,
-              z
-            );
-          }
-        }
-      }
+    const edits = this.dataStore.getChunk(this.chunkX, this.chunkZ);
+    if (!edits) return;
+    for (const [index, id] of edits) {
+      if (index < this.data.length) this.data[index] = id;
     }
   }
 
@@ -206,7 +196,7 @@ export class WorldChunk extends THREE.Group {
     const i = blockIndex(this.size, x, y, z);
     if (this.data[i] === id) return false;
     this.data[i] = id;
-    this.dataStore.set(this.chunkX, this.chunkZ, x, y, z, id);
+    this.dataStore.set(this.chunkX, this.chunkZ, i, id);
     this.meshDirty = true;
     return true;
   }

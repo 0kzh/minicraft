@@ -45,8 +45,13 @@ https://github.com/0kzh/minicraft/assets/9621004/1b5432d7-dc20-4147-b8db-5fa180d
 - `Left click` to break blocks
 - `Right click` to place blocks
 - `Numbers 1-9` to cycle through toolbar
-- `R` to reset position
-- `Esc` to disable pointer-lock/go into orbit mode
+- `Space` (held) to swim up; walk into a block edge to climb out of water
+- `Esc` to pause (resume, or start a new world with a random seed)
+- `F3` to toggle the debug overlay and world-tuning controls
+
+The world (seed, edits, player position) is saved in the browser's IndexedDB
+and restored on the next visit. Textures are Mojang's Bedrock samples
+(`public/textures/MOJANG_LICENSE.md`).
 
 ### Screenshots
 **Orbit view**

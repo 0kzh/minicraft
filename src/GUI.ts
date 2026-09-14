@@ -10,9 +10,11 @@ export function createUI(
   physics: Physics,
   fogRange: { near: number; far: number },
   sunSettings: { distance: number; cycleLength: number },
-  sunHelper: THREE.DirectionalLightHelper
-) {
-  const gui = new GUI();
+  sunHelper: THREE.DirectionalLightHelper,
+  regenerate: () => void
+): GUI {
+  const gui = new GUI({ title: "Debug (F3)" });
+  gui.hide();
   const custom = { volume: 0.3 };
 
   const soundFolder = gui.addFolder("Sound");
@@ -50,7 +52,7 @@ export function createUI(
     .name("X-ray Mode (Disable Textures)");
   terrainFolder.add(world.chunkSize, "width", 8, 128, 1).name("Width");
   terrainFolder.add(world.chunkSize, "height", 8, 255, 1).name("Height");
-  terrainFolder.add(world.params, "seed", 0, 10000, 1).name("Seed");
+  terrainFolder.add(world.params, "seed", 0, 2 ** 31 - 1, 1).name("Seed");
   const terrain = world.params.terrain;
   terrainFolder.add(terrain, "seaLevel", 0, 120, 1).name("Sea Level");
   terrainFolder.add(terrain, "amplitude", 0, 2.5, 0.05).name("Mountains");
@@ -87,7 +89,6 @@ export function createUI(
     .name("Plants");
   decorFolder.add(world.params.ores, "density", 0, 3, 0.05).name("Ores");
 
-  gui
-    .add({ regenerate: () => world.regenerate(player) }, "regenerate")
-    .name("Generate");
+  gui.add({ regenerate }, "regenerate").name("Generate (wipes edits)");
+  return gui;
 }

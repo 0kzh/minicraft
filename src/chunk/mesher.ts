@@ -1,5 +1,6 @@
 import {
   BlockDef,
+  fluidHeight,
   getBlockDef,
   RenderGeometry,
   RenderLayer,
@@ -38,9 +39,6 @@ export type ChunkMesh = {
   cutout: MeshBuffers;
   translucent: MeshBuffers;
 };
-
-/** How far below the block top a liquid's exposed surface sits */
-export const FLUID_SURFACE_DROP = 0.125;
 
 export const FACE_POS_X = 0;
 export const FACE_NEG_X = 1;
@@ -177,24 +175,10 @@ const occludes = (neighbor: BlockDef, self: BlockDef): boolean =>
 
 /**
  * Mask entry: non-zero when a face exists; encodes texture layer, render
- * layer, emissive flag and whether a liquid face borders its lowered surface.
+ * layer and emissive flag.
  */
-const faceKey = (def: BlockDef, face: number, surface: boolean): number =>
-  (def.faces[face] + 1) |
-  (def.emissive ? 1 << 9 : 0) |
-  (def.layer << 10) |
-  (surface ? 1 << 12 : 0);
-
-const SURFACE_BIT = 1 << 12;
-
-/** A liquid cell is a surface cell when the block above is not the same liquid */
-const isFluidSurface = (
-  vol: LitVolume,
-  def: BlockDef,
-  x: number,
-  y: number,
-  z: number
-): boolean => def.fluid && vol.get(x, y + 1, z) !== def.id;
+const faceKey = (def: BlockDef, face: number): number =>
+  (def.faces[face] + 1) | (def.emissive ? 1 << 9 : 0) | (def.layer << 10);
 
 /**
  * Smooth lighting and ambient occlusion for the four corners of the face of
@@ -298,8 +282,10 @@ export function meshChunk(size: ChunkSize, n: ChunkNeighborhood): ChunkMesh {
     [RenderLayer.Translucent]: new GeometryBuilder(),
   };
 
+  const data = n.chunks[NEIGHBORHOOD_CENTER] as Uint8Array;
   meshCubes(size, vol, builders);
-  meshCrosses(size, n.chunks[NEIGHBORHOOD_CENTER] as Uint8Array, vol, builders);
+  meshCrosses(size, data, vol, builders);
+  meshFluids(size, data, vol, builders);
 
   return {
     opaque: builders[RenderLayer.Opaque].build(),
@@ -360,11 +346,7 @@ function meshCubes(
             a.geometry === RenderGeometry.Cube &&
             !occludes(b, a)
           ) {
-            maskPos.key[idx] = faceKey(
-              a,
-              facePos,
-              isFluidSurface(vol, a, pos[0], pos[1], pos[2])
-            );
+            maskPos.key[idx] = faceKey(a, facePos);
             cornerShading(vol, next, u, v, keys);
             maskPos.ao[idx] = keys[0];
             maskPos.sky[idx] = keys[1];
@@ -378,11 +360,7 @@ function meshCubes(
             b.geometry === RenderGeometry.Cube &&
             !occludes(a, b)
           ) {
-            maskNeg.key[idx] = faceKey(
-              b,
-              faceNeg,
-              isFluidSurface(vol, b, next[0], next[1], next[2])
-            );
+            maskNeg.key[idx] = faceKey(b, faceNeg);
             cornerShading(vol, pos, u, v, keys);
             maskNeg.ao[idx] = keys[0];
             maskNeg.sky[idx] = keys[1];
@@ -471,7 +449,6 @@ function emitGreedy(
       }
 
       unpackShade(mask.ao[n], mask.sky[n], mask.block[n], shade);
-      const surface = (mask.key[n] & SURFACE_BIT) !== 0;
       for (let hh = 0; hh < h; hh++) {
         mask.key.fill(0, n + hh * du, n + hh * du + w);
       }
@@ -495,15 +472,6 @@ function emitGreedy(
       p2[v] += h;
       const p3 = base.slice();
       p3[v] += h;
-
-      if (surface && (d !== 1 || positive)) {
-        // Lower the exposed liquid surface: the whole top face, or the top
-        // edge of side faces (surface quads are always one block tall)
-        const top = d === 1 ? plane : base[1] + 1;
-        for (const p of [p0, p1, p2, p3]) {
-          if (p[1] === top) p[1] -= FLUID_SURFACE_DROP;
-        }
-      }
 
       const uv = (uOff: number, vOff: number) =>
         swapUV ? [vOff, uOff] : [uOff, vOff];
@@ -596,6 +564,186 @@ function meshCrosses(
           FACE_POS_Y,
           def.emissive
         );
+      }
+    }
+  }
+}
+
+/**
+ * Surface height of a liquid at the corner shared by the four cells around
+ * (x, z) at row y, following Minecraft: any of those cells with the same
+ * liquid above it makes the corner full; otherwise it is the average of the
+ * liquid heights, weighting near-full cells heavily and open air as zero.
+ */
+function fluidCornerHeight(
+  vol: LitVolume,
+  source: number,
+  x: number,
+  y: number,
+  z: number
+): number {
+  let total = 0;
+  let weight = 0;
+  for (let dz = -1; dz <= 0; dz++) {
+    for (let dx = -1; dx <= 0; dx++) {
+      const cx = x + dx;
+      const cz = z + dz;
+      if (getBlockDef(vol.get(cx, y + 1, cz)).fluidSource === source) return 1;
+      const def = getBlockDef(vol.get(cx, y, cz));
+      if (def.fluid && def.fluidSource === source) {
+        const h = fluidHeight(def);
+        if (h >= 0.8) {
+          total += h * 10;
+          weight += 10;
+        } else {
+          total += h;
+          weight++;
+        }
+      } else if (!def.opaque) {
+        weight++;
+      }
+    }
+  }
+  return weight ? total / weight : 0;
+}
+
+/** Horizontal side faces of a fluid cell: [dx, dz, face, cornerA, cornerB] */
+const FLUID_SIDES: [number, number, number, number, number][] = [
+  [1, 0, FACE_POS_X, 1, 3],
+  [-1, 0, FACE_NEG_X, 0, 2],
+  [0, 1, FACE_POS_Z, 2, 3],
+  [0, -1, FACE_NEG_Z, 0, 1],
+];
+
+function meshFluids(
+  size: ChunkSize,
+  data: Uint8Array,
+  vol: LitVolume,
+  builders: Record<RenderLayer, GeometryBuilder>
+) {
+  const w = size.width;
+  const shade = newShade();
+  // Corner heights indexed by (cx | cz << 1): 0=(0,0) 1=(1,0) 2=(0,1) 3=(1,1)
+  const h = [0, 0, 0, 0];
+  const light = (x: number, y: number, z: number) => {
+    shade.sky.fill(vol.skyLight(x, y, z));
+    shade.block.fill(vol.blockLight(x, y, z));
+    shade.ao.fill(3);
+  };
+
+  for (let y = 0; y < size.height; y++) {
+    for (let z = 0; z < w; z++) {
+      for (let x = 0; x < w; x++) {
+        const def = getBlockDef(data[blockIndex(size, x, y, z)]);
+        if (def.geometry !== RenderGeometry.Fluid) continue;
+        const source = def.fluidSource;
+        const builder = builders[def.layer];
+        const same = (bx: number, by: number, bz: number) =>
+          getBlockDef(vol.get(bx, by, bz)).fluidSource === source;
+
+        const aboveSame = same(x, y + 1, z);
+        if (aboveSame) {
+          h.fill(1);
+        } else {
+          h[0] = fluidCornerHeight(vol, source, x, y, z);
+          h[1] = fluidCornerHeight(vol, source, x + 1, y, z);
+          h[2] = fluidCornerHeight(vol, source, x, y, z + 1);
+          h[3] = fluidCornerHeight(vol, source, x + 1, y, z + 1);
+        }
+
+        if (!aboveSame && !vol.isOpaque(x, y + 1, z)) {
+          light(x, y + 1, z);
+          builder.quad(
+            [
+              [x, y + h[0], z],
+              [x, y + h[2], z + 1],
+              [x + 1, y + h[3], z + 1],
+              [x + 1, y + h[1], z],
+            ],
+            [
+              [0, 0],
+              [0, 1],
+              [1, 1],
+              [1, 0],
+            ],
+            shade,
+            def.faces[FACE_POS_Y],
+            FACE_POS_Y,
+            def.emissive
+          );
+        }
+
+        if (!same(x, y - 1, z) && !vol.isOpaque(x, y - 1, z)) {
+          light(x, y - 1, z);
+          builder.quad(
+            [
+              [x, y, z],
+              [x + 1, y, z],
+              [x + 1, y, z + 1],
+              [x, y, z + 1],
+            ],
+            [
+              [0, 0],
+              [1, 0],
+              [1, 1],
+              [0, 1],
+            ],
+            shade,
+            def.faces[FACE_NEG_Y],
+            FACE_NEG_Y,
+            def.emissive
+          );
+        }
+
+        for (const [dx, dz, face, ca, cb] of FLUID_SIDES) {
+          const nx = x + dx;
+          const nz = z + dz;
+          if (same(nx, y, nz) || vol.isOpaque(nx, y, nz)) continue;
+          light(nx, y, nz);
+          // Corners a and b are the two surface corners on this side, ordered
+          // so the quad winds counter-clockwise seen from outside
+          const ax = x + (ca & 1);
+          const az = z + (ca >> 1);
+          const bx = x + (cb & 1);
+          const bz = z + (cb >> 1);
+          const ha = h[ca];
+          const hb = h[cb];
+          const flip = face === FACE_POS_X || face === FACE_NEG_Z;
+          const corners = flip
+            ? [
+                [ax, y, az],
+                [ax, y + ha, az],
+                [bx, y + hb, bz],
+                [bx, y, bz],
+              ]
+            : [
+                [ax, y, az],
+                [bx, y, bz],
+                [bx, y + hb, bz],
+                [ax, y + ha, az],
+              ];
+          const uvs = flip
+            ? [
+                [0, 0],
+                [0, 1],
+                [1, 1],
+                [1, 0],
+              ]
+            : [
+                [0, 0],
+                [1, 0],
+                [1, 1],
+                [0, 1],
+              ];
+          builder.quad(
+            corners,
+            uvs,
+            shade,
+            def.faces[face],
+            face,
+            def.emissive
+          );
+        }
       }
     }
   }

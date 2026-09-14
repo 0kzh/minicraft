@@ -62,6 +62,7 @@ export class Player {
   fluidSpeedFactor = 0.45;
   onGround = false;
   inFluid = false;
+  horizontalCollision = false;
 
   input = new THREE.Vector3();
   velocity = new THREE.Vector3();
@@ -122,10 +123,6 @@ export class Player {
     scene.add(this.cameraHelper);
     scene.add(this.boundsHelper);
     scene.add(this.selectionHelper);
-
-    setTimeout(() => {
-      this.controls.lock();
-    }, 2000);
 
     document.addEventListener("keydown", this.onKeyDown.bind(this));
     document.addEventListener("keyup", this.onKeyUp.bind(this));
@@ -194,13 +191,22 @@ export class Player {
 
     // prevent player from falling through
     if (this.position.y < 0) {
-      this.position.set(
-        this.initialPosition.x,
-        this.initialPosition.y,
-        this.initialPosition.z
-      );
+      this.position.y = world.chunkSize.height + 10;
       this.velocity.set(0, 0, 0);
     }
+  }
+
+  /** Camera yaw/pitch in radians, as PointerLockControls applies them */
+  getLook() {
+    const e = new THREE.Euler().setFromQuaternion(
+      this.camera.quaternion,
+      "YXZ"
+    );
+    return { yaw: e.y, pitch: e.x };
+  }
+
+  setLook(yaw: number, pitch: number) {
+    this.camera.quaternion.setFromEuler(new THREE.Euler(pitch, yaw, 0, "YXZ"));
   }
 
   /**
@@ -303,7 +309,7 @@ export class Player {
   }
 
   onKeyDown(event: KeyboardEvent) {
-    const validKeys = ["KeyW", "KeyA", "KeyS", "KeyD", "KeyR"];
+    const validKeys = ["KeyW", "KeyA", "KeyS", "KeyD"];
     if (validKeys.includes(event.code) && !this.controls.isLocked) {
       this.controls.lock();
     }
@@ -341,14 +347,6 @@ export class Player {
         break;
       case "KeyD":
         this.input.x = this.maxSpeed;
-        break;
-      case "KeyR":
-        this.position.set(
-          this.initialPosition.x,
-          this.initialPosition.y,
-          this.initialPosition.z
-        );
-        this.velocity.set(0, 0, 0);
         break;
       case "Space":
         this.spacePressed = true;
