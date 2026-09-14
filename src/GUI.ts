@@ -10,10 +10,8 @@ export function createUI(
   player: Player,
   physics: Physics,
   scene: THREE.Scene,
-  renderer: THREE.WebGLRenderer,
   sunSettings: { distance: number; cycleLength: number },
-  sunHelper: THREE.DirectionalLightHelper,
-  shadowHelper: THREE.CameraHelper
+  sunHelper: THREE.DirectionalLightHelper
 ) {
   const gui = new GUI();
   const custom = { volume: 0.3 };
@@ -39,22 +37,22 @@ export function createUI(
     .name("Simulation Rate");
 
   const worldFolder = gui.addFolder("World");
-  worldFolder.add(renderer.shadowMap, "enabled").name("Enable Shadows");
   worldFolder.add(sunHelper, "visible").name("Show Sun Helper");
-  worldFolder.add(shadowHelper, "visible").name("Show Shadow Helper");
   worldFolder
     .add(sunSettings, "cycleLength", 0, 1000, 1)
     .name("Day Length (s)");
-  worldFolder.add(world, "renderDistance", 1, 16, 1).name("Render Distance");
+  worldFolder.add(world, "renderDistance", 1, 32, 1).name("Render Distance");
   if (scene.fog) {
     worldFolder.add(scene.fog, "near", 1, 200, 1).name("Fog Near");
     worldFolder.add(scene.fog, "far", 1, 200, 1).name("Fog Far");
   }
 
   const terrainFolder = gui.addFolder("Terrain");
-  terrainFolder.add(world, "wireframeMode").name("X-ray Mode (Disable Textures)");
+  terrainFolder
+    .add(world, "wireframeMode")
+    .name("X-ray Mode (Disable Textures)");
   terrainFolder.add(world.chunkSize, "width", 8, 128, 1).name("Width");
-  terrainFolder.add(world.chunkSize, "height", 8, 64, 1).name("Height");
+  terrainFolder.add(world.chunkSize, "height", 8, 255, 1).name("Height");
   terrainFolder.add(world.params, "seed", 1, 10000, 1).name("Seed");
   terrainFolder.add(world.params.terrain, "scale", 10, 100, 1).name("Scale");
   terrainFolder.add(world.params.terrain, "magnitude", 0, 1).name("Magnitude");
@@ -105,5 +103,7 @@ export function createUI(
       .name("Z Scale");
   }
 
-  gui.add(world, "regenerate").name("Generate");
+  gui
+    .add({ regenerate: () => world.regenerate(player) }, "regenerate")
+    .name("Generate");
 }

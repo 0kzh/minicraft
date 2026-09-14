@@ -1,7 +1,6 @@
 import * as THREE from "three";
 
 import { BlockID } from "./Block";
-import { BlockFactory } from "./Block/BlockFactory";
 import { Player } from "./Player";
 import { World } from "./World";
 
@@ -53,7 +52,7 @@ export class Physics {
   update(dt: number, player: Player, world: World) {
     this.accumulator += dt;
     const blockUnderneath =
-      this.getBlockUnderneath(player, world)?.block || BlockID.Air;
+      this.getBlockUnderneath(player, world) ?? BlockID.Air;
 
     while (this.accumulator >= this.stepSize) {
       player.velocity.y += Physics.GRAVITY * this.stepSize;
@@ -100,24 +99,16 @@ export class Physics {
     for (let x = minX; x <= maxX; x++) {
       for (let y = minY; y <= maxY; y++) {
         for (let z = minZ; z <= maxZ; z++) {
-          const block = world.getBlock(x, y, z);
           // If the block is solid, add it to the list of candidates
-          if (block) {
-            const blockClass = BlockFactory.getBlock(block.block);
-            if (!blockClass.canPassThrough) {
-              candidates.push({
-                block: block.block,
-                x: x + 0.5,
-                y: y + 0.5,
-                z: z + 0.5,
-              });
-              this.addCollisionHelper({
-                block: block.block,
-                x: x + 0.5,
-                y: y + 0.5,
-                z: z + 0.5,
-              });
-            }
+          if (world.isSolid(x, y, z)) {
+            const candidate: Candidate = {
+              block: world.getBlock(x, y, z) as BlockID,
+              x: x + 0.5,
+              y: y + 0.5,
+              z: z + 0.5,
+            };
+            candidates.push(candidate);
+            if (this.helpers.visible) this.addCollisionHelper(candidate);
           }
         }
       }
@@ -175,7 +166,7 @@ export class Physics {
           overlap,
         });
 
-        this.addContactPointerHelper(closestPoint);
+        if (this.helpers.visible) this.addContactPointerHelper(closestPoint);
       }
     }
 
