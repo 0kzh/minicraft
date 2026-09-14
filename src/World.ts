@@ -3,8 +3,14 @@ import * as THREE from "three";
 import audioManager from "./audio/AudioManager";
 import { BlockID } from "./Block";
 import { getBlockDef } from "./Block/blocks";
-import { ChunkNeighborhood, ChunkSize } from "./chunk/ChunkData";
+import {
+  ChunkNeighborhood,
+  ChunkSize,
+  NEIGHBOR_OFFSETS,
+  neighborIndex,
+} from "./chunk/ChunkData";
 import { ChunkMaterials } from "./chunk/ChunkMaterial";
+import { MAX_LIGHT } from "./chunk/lighting";
 import { DataStore } from "./DataStore";
 import { Player } from "./Player";
 import { WorkerPool } from "./WorkerPool";
@@ -297,7 +303,7 @@ export class World extends THREE.Group {
     }
     if (chunk.disposed) return;
 
-    // Neighbours can now cull faces against this chunk's data
+    // Neighbours can now cull faces and light against this chunk's data
     for (const neighbor of this.neighbors(chunk)) {
       if (neighbor?.loaded) neighbor.meshDirty = true;
     }
@@ -305,16 +311,11 @@ export class World extends THREE.Group {
 
   /**
    * True when every neighbour inside render distance has voxel data, so the
-   * chunk can be meshed once with correct border culling.
+   * chunk can be meshed once with correct border culling and lighting.
    */
   private neighborsReady(chunk: WorldChunk, center: ChunkCoord) {
     const rd = this.renderDistance;
-    for (const [dx, dz] of [
-      [-1, 0],
-      [1, 0],
-      [0, -1],
-      [0, 1],
-    ]) {
+    for (const [dx, dz] of NEIGHBOR_OFFSETS) {
       const nx = chunk.chunkX + dx;
       const nz = chunk.chunkZ + dz;
       const inRange =
@@ -324,25 +325,21 @@ export class World extends THREE.Group {
     return true;
   }
 
+  /** The eight horizontally adjacent chunks (undefined where not created) */
   private neighbors(chunk: WorldChunk) {
-    return [
-      this.getChunk(chunk.chunkX - 1, chunk.chunkZ),
-      this.getChunk(chunk.chunkX + 1, chunk.chunkZ),
-      this.getChunk(chunk.chunkX, chunk.chunkZ - 1),
-      this.getChunk(chunk.chunkX, chunk.chunkZ + 1),
-    ];
+    return NEIGHBOR_OFFSETS.map(([dx, dz]) =>
+      this.getChunk(chunk.chunkX + dx, chunk.chunkZ + dz)
+    );
   }
 
   private getNeighborhood(chunk: WorldChunk): ChunkNeighborhood {
-    const data = (c: WorldChunk | undefined) => (c?.loaded ? c.data : null);
-    const [negX, posX, negZ, posZ] = this.neighbors(chunk);
-    return {
-      center: chunk.data as Uint8Array,
-      negX: data(negX),
-      posX: data(posX),
-      negZ: data(negZ),
-      posZ: data(posZ),
-    };
+    const chunks: (Uint8Array | null)[] = new Array(9).fill(null);
+    chunks[neighborIndex(0, 0)] = chunk.data as Uint8Array;
+    for (const [dx, dz] of NEIGHBOR_OFFSETS) {
+      const c = this.getChunk(chunk.chunkX + dx, chunk.chunkZ + dz);
+      chunks[neighborIndex(dx, dz)] = c?.loaded ? c.data : null;
+    }
+    return { chunks };
   }
 
   /**
@@ -356,18 +353,17 @@ export class World extends THREE.Group {
     const { x: bx, y: by, z: bz } = coords.block;
     if (!chunk.setBlock(bx, by, bz, id)) return false;
 
-    const dirty: (WorldChunk | undefined)[] = [chunk];
+    // Remesh the edited chunk immediately so edits feel instant; neighbours
+    // that the change can light or shade follow on the next update
+    chunk.remesh(this.getNeighborhood(chunk));
     const w = this.chunkSize.width;
-    if (bx === 0) dirty.push(this.getChunk(coords.chunk.x - 1, coords.chunk.z));
-    if (bx === w - 1)
-      dirty.push(this.getChunk(coords.chunk.x + 1, coords.chunk.z));
-    if (bz === 0) dirty.push(this.getChunk(coords.chunk.x, coords.chunk.z - 1));
-    if (bz === w - 1)
-      dirty.push(this.getChunk(coords.chunk.x, coords.chunk.z + 1));
-
-    // Remesh immediately so edits feel instant
-    for (const c of dirty) {
-      if (c?.loaded) c.remesh(this.getNeighborhood(c));
+    const reach = MAX_LIGHT + 1;
+    for (const [dx, dz] of NEIGHBOR_OFFSETS) {
+      const nearX = dx === 0 || (dx < 0 ? bx < reach : w - 1 - bx < reach);
+      const nearZ = dz === 0 || (dz < 0 ? bz < reach : w - 1 - bz < reach);
+      if (!nearX || !nearZ) continue;
+      const c = this.getChunk(coords.chunk.x + dx, coords.chunk.z + dz);
+      if (c?.loaded) c.meshDirty = true;
     }
     return true;
   }

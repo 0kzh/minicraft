@@ -56,11 +56,27 @@ export const setBlock = (
   }
 };
 
-/** Voxel data of a chunk and its four horizontal neighbours (null if unloaded) */
+/**
+ * Voxel data of a chunk and its eight horizontal neighbours (null if
+ * unloaded), indexed by neighborIndex(dx, dz). The centre chunk is never null.
+ */
 export type ChunkNeighborhood = {
-  center: Uint8Array;
-  negX: Uint8Array | null;
-  posX: Uint8Array | null;
-  negZ: Uint8Array | null;
-  posZ: Uint8Array | null;
+  chunks: (Uint8Array | null)[];
 };
+
+export const NEIGHBORHOOD_CENTER = 4;
+
+export const neighborIndex = (dx: number, dz: number): number =>
+  (dz + 1) * 3 + (dx + 1);
+
+/** Offsets of the eight horizontal neighbours as [dx, dz] */
+export const NEIGHBOR_OFFSETS: [number, number][] = [
+  [-1, -1],
+  [0, -1],
+  [1, -1],
+  [-1, 0],
+  [1, 0],
+  [-1, 1],
+  [0, 1],
+  [1, 1],
+];
