@@ -127,7 +127,8 @@ body {
   }
 
   /* Vanilla-style slider: an invisible range input over the button label */
-  #render-distance-slider {
+  #render-distance-slider,
+  #music-volume-slider {
     position: absolute;
     inset: 0;
     width: 100%;

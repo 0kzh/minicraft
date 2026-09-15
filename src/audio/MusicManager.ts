@@ -38,6 +38,34 @@ const FADE_STEP = 0.01;
 /** Ticks per second, `MusicManager.tick` runs on the client tick */
 const TICK_RATE = 20;
 
+/** How often the remaining silence is written to storage */
+const SAVE_INTERVAL = TICK_RATE;
+
+const DELAY_KEY = "minicraft.music.nextSongDelay";
+const VOLUME_KEY = "minicraft.music.volume";
+
+/** Default for the vanilla "Music" slider; the master volume applies on top */
+export const DEFAULT_MUSIC_VOLUME = 0.5;
+
+const readNumber = (key: string): number | null => {
+  try {
+    const raw = localStorage.getItem(key);
+    if (raw === null) return null;
+    const v = Number(raw);
+    return Number.isFinite(v) ? v : null;
+  } catch {
+    return null;
+  }
+};
+
+const writeNumber = (key: string, value: number) => {
+  try {
+    localStorage.setItem(key, String(value));
+  } catch {
+    // Storage unavailable (private mode, quota); the value just won't stick
+  }
+};
+
 /** `Mth.nextInt(random, min, max)`: inclusive on both ends */
 const nextInt = (min: number, max: number) =>
   min + Math.floor(Math.random() * (max - min + 1));
@@ -65,6 +93,11 @@ const pickTrack = (
  * short initial delay a track plays once, then the manager waits a random
  * 10-20 minutes of silence before the next one. Tracks fade in when they
  * start and fade out/in when muted (pause menu).
+ *
+ * Like vanilla (`Minecraft.tick` skips `musicManager.tick()` while paused)
+ * the silence countdown only runs while the game is unpaused, and it is kept
+ * in storage so reloading the page continues the schedule instead of
+ * restarting a song.
  */
 export class MusicManager {
   private current: Howl | null = null;
@@ -73,26 +106,55 @@ export class MusicManager {
   private currentGain = 0;
   private targetGain = 1;
   private paused = false;
-  private nextSongDelay = STARTING_DELAY;
+  private muted = false;
+  private nextSongDelay: number;
   private tickAccumulator = 0;
   private unlocked = false;
+  private sinceSave = 0;
+  /** Vanilla "Music" option, 0..1 */
+  private musicVolume = readNumber(VOLUME_KEY) ?? DEFAULT_MUSIC_VOLUME;
   /** Name of the playing track, for the debug overlay */
   nowPlaying = "";
 
   constructor() {
+    // A reload mid-song counts as the song ending: wait a full gap, like
+    // vanilla does after `!soundManager.isActive(currentMusic)`
+    const saved = readNumber(DELAY_KEY);
+    this.nextSongDelay =
+      saved === null
+        ? STARTING_DELAY
+        : saved < 0
+        ? nextInt(CREATIVE.minDelay, CREATIVE.maxDelay)
+        : Math.floor(saved);
+
     // Browsers only allow playback after a user gesture; hold the schedule
     // until then so the first song is not lost to a rejected `play()`
-    const unlock = () => {
+    const unlock = (e: Event) => {
+      // Escape opens the menu without starting the game, so it does not
+      // start the clock either
+      if (e instanceof KeyboardEvent && e.key === "Escape") return;
       this.unlocked = true;
       window.removeEventListener("pointerdown", unlock);
       window.removeEventListener("keydown", unlock);
     };
     window.addEventListener("pointerdown", unlock);
     window.addEventListener("keydown", unlock);
+    window.addEventListener("pagehide", () => this.save());
+  }
+
+  get volume() {
+    return this.musicVolume;
+  }
+
+  setVolume(volume: number) {
+    this.musicVolume = Math.min(1, Math.max(0, volume));
+    writeNumber(VOLUME_KEY, this.musicVolume);
+    this.applyVolume();
   }
 
   /** Fades the current track out (and back in) rather than cutting it */
   setMuted(muted: boolean) {
+    this.muted = muted;
     this.targetGain = muted ? 0 : 1;
   }
 
@@ -101,7 +163,8 @@ export class MusicManager {
     this.tickAccumulator += Math.min(deltaTime, 1);
     while (this.tickAccumulator >= 1 / TICK_RATE) {
       this.tickAccumulator -= 1 / TICK_RATE;
-      this.tick(CREATIVE);
+      if (this.muted) this.fade();
+      else this.tick(CREATIVE);
     }
   }
 
@@ -115,6 +178,21 @@ export class MusicManager {
     }
     this.nextSongDelay = Math.min(this.nextSongDelay, music.maxDelay);
     if (!this.current && this.nextSongDelay-- <= 0) this.startPlaying(music);
+    if (++this.sinceSave >= SAVE_INTERVAL) this.save();
+  }
+
+  /** Remaining silence in ticks, or -1 while a song is playing */
+  private save() {
+    this.sinceSave = 0;
+    writeNumber(DELAY_KEY, this.current ? -1 : this.nextSongDelay);
+  }
+
+  private applyVolume() {
+    if (!this.current) return;
+    this.current.volume(
+      this.currentVolume * this.musicVolume * this.currentGain,
+      this.currentId
+    );
   }
 
   private fade() {
@@ -123,7 +201,7 @@ export class MusicManager {
       this.currentGain < this.targetGain
         ? Math.min(this.currentGain + FADE_STEP, this.targetGain)
         : Math.max(this.currentGain - FADE_STEP, this.targetGain);
-    this.current.volume(this.currentVolume * this.currentGain, this.currentId);
+    this.applyVolume();
     if (this.currentGain === 0 && !this.paused) {
       this.paused = true;
       this.current.pause(this.currentId);
@@ -151,6 +229,7 @@ export class MusicManager {
     });
     this.currentId = this.current.play();
     this.nextSongDelay = Number.MAX_SAFE_INTEGER;
+    this.save();
   }
 
   private stop() {

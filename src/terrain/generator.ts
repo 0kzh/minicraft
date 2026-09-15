@@ -283,7 +283,7 @@ const SEA_FLOOR_SEAL = 4;
 /** Columns this close above sea level count as coast: no ravines, flooded caves */
 const COAST_BAND = 6;
 /** Columns within this many blocks of open sea also count as coast */
-const COAST_REACH = PAD;
+const COAST_REACH = PAD - 1;
 
 /**
  * Whether the cell at world (wx, y, wz) in a column of the given height is
@@ -618,21 +618,43 @@ function carveCaves(
     }
     return false;
   };
+  // Flood state per column, one ring past the chunk so border cells can see
+  // their neighbours
+  const fw = w + 2;
+  const flooded = new Uint8Array(fw * fw);
+  for (let z = -1; z <= w; z++) {
+    for (let x = -1; x <= w; x++) {
+      const col = columns[(z + PAD) * pw + (x + PAD)];
+      flooded[(z + 1) * fw + (x + 1)] =
+        col.height <= sea + COAST_BAND || nearSea(x, z) ? 1 : 0;
+    }
+  }
+  const isFlooded = (x: number, z: number) => flooded[(z + 1) * fw + (x + 1)];
   for (let z = 0; z < w; z++) {
     for (let x = 0; x < w; x++) {
       const col = columns[(z + PAD) * pw + (x + PAD)];
       const wx = originX + x;
       const wz = originZ + z;
       const base = blockIndex(size, x, 0, z);
-      const submerged = col.height < sea;
-      const flooded =
-        submerged || col.height <= sea + COAST_BAND || nearSea(x, z);
+      const wet = isFlooded(x, z) === 1;
+      // Aquifer barrier (`Aquifer.computeSubstance`): a dry cave cell whose
+      // neighbouring column is flooded keeps its stone so water never stands
+      // against open air
+      const barrier =
+        !wet &&
+        (isFlooded(x - 1, z) === 1 ||
+          isFlooded(x + 1, z) === 1 ||
+          isFlooded(x, z - 1) === 1 ||
+          isFlooded(x, z + 1) === 1);
       const top = Math.min(col.height, size.height - 1);
       for (let y = 4; y <= top; y++) {
         if (!isCarved(noise, params, carver, wx, y, wz, col)) continue;
         let id = BlockID.Air;
         if (y <= lava) id = BlockID.Lava;
-        else if (flooded && y <= sea) id = BlockID.Water;
+        else if (y <= sea) {
+          if (wet) id = BlockID.Water;
+          else if (barrier) continue;
+        }
         data[base + y * stride] = id;
       }
     }

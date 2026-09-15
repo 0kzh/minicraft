@@ -232,6 +232,24 @@ export default class Game {
     }
     this.setRenderDistance(this.adaptive.max);
 
+    const musicSlider = document.getElementById("music-volume-slider");
+    const musicLabel = document.getElementById("music-volume");
+    if (musicSlider instanceof HTMLInputElement && musicLabel) {
+      const show = () =>
+        (musicLabel.textContent = `Music: ${Math.round(
+          this.music.volume * 100
+        )}%`);
+      musicSlider.value = String(Math.round(this.music.volume * 100));
+      show();
+      musicSlider.addEventListener("input", () => {
+        this.music.setVolume(Number(musicSlider.value) / 100);
+        show();
+      });
+      musicSlider.addEventListener("change", () =>
+        audioManager.play("ui.button.click")
+      );
+    }
+
     this.player.controls.addEventListener("lock", () => {
       this.wantLock = false;
       this.setPauseVisible(false);
