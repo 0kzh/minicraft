@@ -434,7 +434,7 @@ export class World extends THREE.Group implements FluidWorld {
   addBlock(x: number, y: number, z: number, block: BlockID): boolean {
     const existing = this.getBlock(x, y, z);
     if (existing === undefined) return false;
-    if (existing !== BlockID.Air && !getBlockDef(existing).fluid) return false;
+    if (!getBlockDef(existing).replaceable) return false;
     if (!this.setBlock(x, y, z, block)) return false;
     this.playBlockSound(block);
     this.fluids.scheduleAround(x, y, z);

@@ -12,6 +12,7 @@ import {
   loadBlockTextures,
 } from "./Block/textures";
 import { ChunkMaterials } from "./chunk/ChunkMaterial";
+import { Clouds } from "./Clouds";
 import { BlockBreaker } from "./gameplay/BlockBreaker";
 import { HandRenderer } from "./gameplay/HandRenderer";
 import { Hud } from "./gameplay/Hud";
@@ -62,6 +63,7 @@ export default class Game {
   private hand!: HandRenderer;
   private hud = new Hud();
   private adaptive!: AdaptiveRenderDistance;
+  private clouds!: Clouds;
   /** Deferred right-click repeat, like vanilla's 4-tick place delay */
   private placeCooldown = 0;
   private placing = false;
@@ -358,6 +360,8 @@ export default class Game {
 
     this.sky = new Sky();
     this.scene.add(this.sky.mesh);
+    this.clouds = new Clouds();
+    this.scene.add(this.clouds.group);
 
     this.world = new World(seed, this.scene, new ChunkMaterials(textures));
     this.scene.add(this.world);
@@ -487,6 +491,14 @@ export default class Game {
       this.sky.fogEnd = end;
     }
     this.world.materials.setFog(this.fogColor, start, end, cylindrical);
+    // FogRenderer.setupFog(FOG_TERRAIN): clouds fade only over the last
+    // viewDistance / 10 blocks (4..64), so they stay visible past the terrain
+    this.clouds.setFog(
+      this.fogColor,
+      cylindrical ? end - THREE.MathUtils.clamp(end / 10, 4, 64) : start,
+      end
+    );
+    this.clouds.update(time, this.sky.timeOfDay, this.player.camera.position);
     this.renderer.setClearColor(this.fogColor);
     this.hand.setLight(this.sky.daylight, this.skyVisibleAbovePlayer());
   }

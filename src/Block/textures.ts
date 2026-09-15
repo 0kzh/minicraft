@@ -152,11 +152,15 @@ export function renderBlockIcon(
     return canvas.toDataURL();
   }
 
-  // Isometric cube: half-width w, face height h; the 2:1 pixel-art projection
-  const w = ICON_SIZE * 0.48;
-  const h = ICON_SIZE * 0.28;
+  // Cube seen like vanilla's GUI item transform (rotated 30 deg down, 45 deg
+  // around): edge L projects to half-width L/sqrt2, top rhombus half-height
+  // L/(2 sqrt2) and vertical side height L cos30
+  const L = ICON_SIZE / (Math.SQRT2 / 2 + Math.cos(Math.PI / 6));
+  const w = L / Math.SQRT2;
+  const h = w / 2;
+  const side = L * Math.cos(Math.PI / 6);
   const cx = ICON_SIZE / 2;
-  const top = ICON_SIZE * 0.06;
+  const top = (ICON_SIZE - 2 * h - side) / 2;
   const s = TEXTURE_SIZE;
 
   // Top face: parallelogram from (cx, top) right to (cx+w, top+h), down to (cx, top+2h), left to (cx-w, top+h)
@@ -167,27 +171,13 @@ export function renderBlockIcon(
 
   // Left face (-X side)
   ctx.save();
-  ctx.setTransform(
-    w / s,
-    h / s,
-    0,
-    (ICON_SIZE - top - 2 * h) / s,
-    cx - w,
-    top + h
-  );
+  ctx.setTransform(w / s, h / s, 0, side / s, cx - w, top + h);
   ctx.drawImage(face(def.faces[1], 0.8), 0, 0);
   ctx.restore();
 
   // Right face (+Z side)
   ctx.save();
-  ctx.setTransform(
-    w / s,
-    -h / s,
-    0,
-    (ICON_SIZE - top - 2 * h) / s,
-    cx,
-    top + 2 * h
-  );
+  ctx.setTransform(w / s, -h / s, 0, side / s, cx, top + 2 * h);
   ctx.drawImage(face(def.faces[4], 0.6), 0, 0);
   ctx.restore();
 

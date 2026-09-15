@@ -86,6 +86,8 @@ export type BlockDef = {
   opaque: boolean;
   /** Player and physics can pass through */
   passable: boolean;
+  /** Placing a block into this cell replaces it (vanilla `canBeReplaced`) */
+  replaceable: boolean;
   /** Collision and render bounds for Cube/Box geometry */
   box: BlockBox;
   /** Liquid: slows and buoys the player, tints the view when submerged */
@@ -142,6 +144,7 @@ const cube = (
   layer: RenderLayer.Opaque,
   opaque: true,
   passable: false,
+  replaceable: false,
   box: FULL_BOX,
   fluid: false,
   fluidSource: id,
@@ -201,6 +204,7 @@ const fluid = (
     layer: RenderLayer.Translucent,
     opaque: false,
     passable: true,
+    replaceable: true,
     fluid: true,
     lightOpacity: 2,
     cullSelf: true,
@@ -226,11 +230,16 @@ const flowingVariants = (source: BlockDef, base: BlockID): BlockDef[] => {
   return out;
 };
 
+/** Outline shapes from vanilla `TallGrassBlock` / `FlowerBlock` (in 16ths) */
+const BUSH_BOX: BlockBox = [2 / 16, 0, 2 / 16, 14 / 16, 13 / 16, 14 / 16];
+const FLOWER_BOX: BlockBox = [5 / 16, 0, 5 / 16, 11 / 16, 10 / 16, 11 / 16];
+
 const cross = (
   id: BlockID,
   name: string,
   texture: TextureName,
-  uiTexture: string
+  uiTexture: string,
+  bounds: BlockBox = BUSH_BOX
 ): BlockDef => ({
   id,
   name,
@@ -238,7 +247,8 @@ const cross = (
   layer: RenderLayer.Cutout,
   opaque: false,
   passable: true,
-  box: FULL_BOX,
+  replaceable: true,
+  box: bounds,
   fluid: false,
   fluidSource: id,
   fluidLevel: 0,
@@ -260,6 +270,7 @@ const defs: BlockDef[] = [
     layer: RenderLayer.Opaque,
     opaque: false,
     passable: true,
+    replaceable: true,
     box: FULL_BOX,
     fluid: false,
     fluidSource: BlockID.Air,
@@ -294,8 +305,14 @@ const defs: BlockDef[] = [
   ),
   leaves(BlockID.Leaves, "leaves", "leaves", ""),
   cross(BlockID.TallGrass, "tall_grass", "tall_grass", ""),
-  cross(BlockID.FlowerRose, "flower_rose", "flower_rose", ""),
-  cross(BlockID.FlowerDandelion, "flower_dandelion", "flower_dandelion", ""),
+  cross(BlockID.FlowerRose, "flower_rose", "flower_rose", "", FLOWER_BOX),
+  cross(
+    BlockID.FlowerDandelion,
+    "flower_dandelion",
+    "flower_dandelion",
+    "",
+    FLOWER_BOX
+  ),
   cube(BlockID.RedstoneLamp, "redstone_lamp", "redstone_lamp", "", "stone", {
     emissive: true,
     lightEmission: 15,
@@ -353,7 +370,8 @@ const defs: BlockDef[] = [
     "snow_layer",
     "snow",
     [0, 0, 0, 1, SNOW_LAYER_HEIGHT, 1],
-    "snow"
+    "snow",
+    { replaceable: true }
   ),
   cross(BlockID.DeadBush, "dead_bush", "dead_bush", ""),
   cube(BlockID.GoldOre, "gold_ore", "gold_ore", "", "stone"),
