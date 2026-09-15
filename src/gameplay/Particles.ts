@@ -11,21 +11,21 @@ const MAX_PARTICLES = 2048;
 const PATCH = 0.25;
 
 const vertexShader = /* glsl */ `
-  in vec3 aUv;
-  in vec2 aExtra;
+  in vec3 iPosition;
+  in vec3 iUv;
+  in vec2 iExtra;
   out vec3 vUv;
   out float vLight;
   out float vDist;
-  uniform float uScale;
 
   void main() {
-    vUv = aUv;
-    vLight = aExtra.y;
-    vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+    // Camera-facing quad like SingleQuadParticle: corners offset in view space
+    vec4 mvPosition = modelViewMatrix * vec4(iPosition, 1.0);
+    mvPosition.xy += position.xy * iExtra.x;
+    vUv = vec3(iUv.xy + uv * PATCH, iUv.z);
+    vLight = iExtra.y;
     vDist = length(mvPosition.xyz);
-    gl_PointSize = aExtra.x * uScale / max(-mvPosition.z, 0.01);
     gl_Position = projectionMatrix * mvPosition;
-    if (aExtra.x <= 0.0) gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
   }
 `;
 
@@ -41,8 +41,7 @@ const fragmentShader = /* glsl */ `
   in float vDist;
 
   void main() {
-    vec2 uv = vUv.xy + vec2(gl_PointCoord.x, 1.0 - gl_PointCoord.y) * PATCH;
-    vec4 texel = texture(uAtlas, vec3(uv, vUv.z));
+    vec4 texel = texture(uAtlas, vUv);
     if (texel.a < 0.5) discard;
     // TerrainParticle tints chips to 60% of the block colour
     float light = 0.6 * (0.35 + 0.65 * vLight) * (uSunLight * 0.8 + 0.2);
@@ -60,45 +59,56 @@ type Particle = {
   vx: number;
   vy: number;
   vz: number;
+  /** Position at the previous tick, for render interpolation */
+  px: number;
+  py: number;
+  pz: number;
   /** Remaining life in ticks */
   life: number;
 };
 
 /**
- * Vanilla `TerrainParticle`s: small textured points cut from a random patch
- * of the block's texture, thrown out with a little upward kick (`Particle`
- * constructor velocities), pulled down by gravity 0.04/tick with 0.98 drag
- * and settling on solid blocks; lifetime 4 / (rand * 0.9 + 0.1) ticks.
+ * Vanilla `TerrainParticle`s: small camera-facing quads cut from a random
+ * patch of the block's texture, thrown out with a little upward kick
+ * (`Particle` constructor velocities), pulled down by gravity 0.04/tick with
+ * 0.98 drag and settling on solid blocks; lifetime 4 / (rand * 0.9 + 0.1)
+ * ticks. All particles share one instanced draw; live ones are kept packed
+ * at the front of the buffers so only they are uploaded and drawn, with
+ * positions interpolated between ticks each frame.
  */
 export class Particles {
-  readonly points: THREE.Points;
+  readonly mesh: THREE.Mesh;
+  private readonly geometry: THREE.InstancedBufferGeometry;
   private readonly positions = new Float32Array(MAX_PARTICLES * 3);
   private readonly uvs = new Float32Array(MAX_PARTICLES * 3);
   private readonly extra = new Float32Array(MAX_PARTICLES * 2);
-  private readonly particles: (Particle | null)[] = new Array(
-    MAX_PARTICLES
-  ).fill(null);
-  private next = 0;
+  private readonly particles: Particle[] = [];
   private accumulator = 0;
   private readonly uniforms: {
     uAtlas: THREE.IUniform<THREE.DataArrayTexture>;
-    uScale: THREE.IUniform<number>;
     uSunLight: THREE.IUniform<number>;
     uFogColor: THREE.IUniform<THREE.Color>;
     uFog: THREE.IUniform<THREE.Vector3>;
   };
 
   constructor(textures: BlockTextures, private readonly world: World) {
-    const geometry = new THREE.BufferGeometry();
-    geometry.setAttribute(
-      "position",
-      new THREE.BufferAttribute(this.positions, 3)
-    );
-    geometry.setAttribute("aUv", new THREE.BufferAttribute(this.uvs, 3));
-    geometry.setAttribute("aExtra", new THREE.BufferAttribute(this.extra, 2));
+    const quad = new THREE.PlaneGeometry(1, 1);
+    this.geometry = new THREE.InstancedBufferGeometry();
+    this.geometry.index = quad.index;
+    this.geometry.setAttribute("position", quad.attributes.position);
+    this.geometry.setAttribute("uv", quad.attributes.uv);
+    for (const [name, array, size] of [
+      ["iPosition", this.positions, 3],
+      ["iUv", this.uvs, 3],
+      ["iExtra", this.extra, 2],
+    ] as const) {
+      const attribute = new THREE.InstancedBufferAttribute(array, size);
+      attribute.setUsage(THREE.DynamicDrawUsage);
+      this.geometry.setAttribute(name, attribute);
+    }
+    this.geometry.instanceCount = 0;
     this.uniforms = {
       uAtlas: { value: textures.array },
-      uScale: { value: 1 },
       uSunLight: { value: 1 },
       uFogColor: { value: new THREE.Color() },
       uFog: { value: new THREE.Vector3(80, 124, 0) },
@@ -109,10 +119,11 @@ export class Particles {
       fragmentShader,
       uniforms: this.uniforms,
       defines: { PATCH: PATCH.toFixed(2) },
+      side: THREE.DoubleSide,
     });
-    this.points = new THREE.Points(geometry, material);
-    this.points.frustumCulled = false;
-    this.points.renderOrder = 1;
+    this.mesh = new THREE.Mesh(this.geometry, material);
+    this.mesh.frustumCulled = false;
+    this.mesh.renderOrder = 1;
   }
 
   /**
@@ -128,13 +139,23 @@ export class Particles {
     const nx = Math.max(2, Math.ceil(dx / 0.25));
     const ny = Math.max(2, Math.ceil(dy / 0.25));
     const nz = Math.max(2, Math.ceil(dz / 0.25));
+    const light = this.skyExposure(x, y, z);
     for (let i = 0; i < nx; i++)
       for (let j = 0; j < ny; j++)
         for (let k = 0; k < nz; k++) {
           const px = ((i + 0.5) / nx) * dx + x0;
           const py = ((j + 0.5) / ny) * dy + y0;
           const pz = ((k + 0.5) / nz) * dz + z0;
-          this.spawn(x + px, y + py, z + pz, px - 0.5, py - 0.5, pz - 0.5, id);
+          this.spawn(
+            x + px,
+            y + py,
+            z + pz,
+            px - 0.5,
+            py - 0.5,
+            pz - 0.5,
+            id,
+            light
+          );
         }
   }
 
@@ -145,8 +166,10 @@ export class Particles {
     dx: number,
     dy: number,
     dz: number,
-    id: BlockID
+    id: BlockID,
+    light: number
   ) {
+    if (this.particles.length >= MAX_PARTICLES) return;
     const def = getBlockDef(id);
     const rand = () => Math.random() * 2 - 1;
     let vx = dx + rand() * 0.4;
@@ -158,17 +181,19 @@ export class Particles {
     vy = (vy / len) * speed + 0.1;
     vz = (vz / len) * speed;
 
-    const i = this.next;
-    this.next = (this.next + 1) % MAX_PARTICLES;
-    this.particles[i] = {
+    const i = this.particles.length;
+    this.particles.push({
       x,
       y,
       z,
       vx,
       vy,
       vz,
+      px: x,
+      py: y,
+      pz: z,
       life: Math.floor(4 / (Math.random() * 0.9 + 0.1)),
-    };
+    });
     // TerrainParticle: a 4x4 texel patch at a random offset (uo = rand * 3) of
     // the side texture (faces: +X, -X, +Y, -Y, +Z, -Z)
     this.uvs[i * 3] = (Math.random() * 3) / 4;
@@ -177,8 +202,8 @@ export class Particles {
     // SingleQuadParticle quadSize 0.1 * (rand * 0.5 + 0.5) * 2, halved by
     // TerrainParticle, drawn as a quad of twice that half-extent
     this.extra[i * 2] = 0.2 * (Math.random() * 0.5 + 0.5);
-    this.extra[i * 2 + 1] = this.skyExposure(x, y, z);
-    this.write(i);
+    this.extra[i * 2 + 1] = light;
+    this.write(i, 1);
   }
 
   /** 1 when open to the sky, otherwise dimmed like a cave */
@@ -192,15 +217,22 @@ export class Particles {
     return 1;
   }
 
-  private write(i: number) {
+  private write(i: number, alpha: number) {
     const p = this.particles[i];
-    if (p) {
-      this.positions[i * 3] = p.x;
-      this.positions[i * 3 + 1] = p.y;
-      this.positions[i * 3 + 2] = p.z;
-    } else {
-      this.extra[i * 2] = 0;
+    this.positions[i * 3] = p.px + (p.x - p.px) * alpha;
+    this.positions[i * 3 + 1] = p.py + (p.y - p.py) * alpha;
+    this.positions[i * 3 + 2] = p.pz + (p.z - p.pz) * alpha;
+  }
+
+  /** Swap-remove so live particles stay packed at the front */
+  private kill(i: number) {
+    const last = this.particles.length - 1;
+    if (i !== last) {
+      this.particles[i] = this.particles[last];
+      this.uvs.copyWithin(i * 3, last * 3, last * 3 + 3);
+      this.extra.copyWithin(i * 2, last * 2, last * 2 + 2);
     }
+    this.particles.pop();
   }
 
   setLighting(
@@ -214,39 +246,54 @@ export class Particles {
     this.uniforms.uFog.value.set(fogStart, fogEnd, 0);
   }
 
-  update(dt: number, camera: THREE.PerspectiveCamera, pixelRatio: number) {
-    const fov = THREE.MathUtils.degToRad(camera.fov);
-    this.uniforms.uScale.value =
-      (window.innerHeight * pixelRatio) / (2 * Math.tan(fov / 2));
-
+  update(dt: number) {
     this.accumulator += Math.min(dt, Physics.MAX_FRAME_TIME);
     let ticks = 0;
     while (this.accumulator >= Physics.TICK) {
       this.accumulator -= Physics.TICK;
       ticks++;
     }
-    if (ticks === 0) return;
-
-    let any = false;
-    for (let i = 0; i < MAX_PARTICLES; i++) {
-      const p = this.particles[i];
-      if (!p) continue;
-      any = true;
-      for (let t = 0; t < ticks && this.particles[i]; t++) this.tick(i, p);
-      this.write(i);
+    const count = this.particles.length;
+    if (count === 0) {
+      this.geometry.instanceCount = 0;
+      this.mesh.visible = false;
+      return;
     }
-    if (!any) return;
-    const geometry = this.points.geometry;
-    geometry.attributes.position.needsUpdate = true;
-    geometry.attributes.aUv.needsUpdate = true;
-    geometry.attributes.aExtra.needsUpdate = true;
+
+    for (let t = 0; t < ticks; t++) {
+      for (let i = this.particles.length - 1; i >= 0; i--) {
+        const p = this.particles[i];
+        if (--p.life <= 0) this.kill(i);
+        else this.tick(i, p);
+      }
+    }
+    const alpha = this.accumulator / Physics.TICK;
+    for (let i = 0; i < this.particles.length; i++) this.write(i, alpha);
+    this.upload();
+  }
+
+  private upload() {
+    const count = this.particles.length;
+    this.geometry.instanceCount = count;
+    this.mesh.visible = count > 0;
+    for (const [name, size] of [
+      ["iPosition", 3],
+      ["iUv", 3],
+      ["iExtra", 2],
+    ] as const) {
+      const attribute = this.geometry.getAttribute(
+        name
+      ) as THREE.InstancedBufferAttribute;
+      attribute.updateRange.offset = 0;
+      attribute.updateRange.count = count * size;
+      attribute.needsUpdate = true;
+    }
   }
 
   private tick(i: number, p: Particle) {
-    if (--p.life <= 0) {
-      this.particles[i] = null;
-      return;
-    }
+    p.px = p.x;
+    p.py = p.y;
+    p.pz = p.z;
     p.vy -= 0.04;
     const size = this.extra[i * 2] / 2;
     let onGround = false;

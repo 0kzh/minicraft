@@ -375,7 +375,7 @@ export default class Game {
     this.hand = new HandRenderer(textures);
 
     this.particles = new Particles(textures, this.world);
-    this.scene.add(this.particles.points);
+    this.scene.add(this.particles.mesh);
     this.breaker = new BlockBreaker(this.particles);
 
     // Compile the particle and hand programs now rather than stalling the
@@ -536,11 +536,7 @@ export default class Game {
       this.physics.update(deltaTime, this.player, this.world);
       this.updateInteraction(deltaTime);
       this.hand.update(deltaTime, this.player);
-      this.particles.update(
-        deltaTime,
-        this.player.camera,
-        this.renderer.getPixelRatio()
-      );
+      this.particles.update(deltaTime);
     }
     this.world.update(this.player);
     if (this.world.initialLoadComplete) {
