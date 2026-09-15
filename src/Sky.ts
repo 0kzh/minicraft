@@ -147,6 +147,8 @@ export class Sky {
   readonly sunDir = new THREE.Vector3(0, 1, 0);
   /** 0 at night, 1 in full day */
   daylight = 1;
+  /** Fraction of the day measured from noon (0 = noon, 0.5 = midnight) */
+  timeOfDay = 0;
 
   private readonly uniforms = {
     uZenith: { value: new THREE.Color() },
@@ -206,9 +208,11 @@ export class Sky {
     this.uniforms.uHorizon.value.copy(this.horizon);
     this.uniforms.uVoid.value.copy(this.horizon).multiplyScalar(0.55);
     this.uniforms.uSunDir.value.copy(this.sunDir);
-    this.uniforms.uStarBrightness.value = starBrightness(
-      THREE.MathUtils.euclideanModulo((angle - Math.PI / 2) / (2 * Math.PI), 1)
+    this.timeOfDay = THREE.MathUtils.euclideanModulo(
+      (angle - Math.PI / 2) / (2 * Math.PI),
+      1
     );
+    this.uniforms.uStarBrightness.value = starBrightness(this.timeOfDay);
     // `Level.getMoonPhase`: advances one step per day
     this.uniforms.uMoonPhase.value =
       Math.floor(time / this.cycleLength + this.timeOffset) % 8;
