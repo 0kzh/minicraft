@@ -14,7 +14,6 @@ import { ChunkMaterials } from "./chunk/ChunkMaterial";
 import { BlockBreaker } from "./gameplay/BlockBreaker";
 import { HandRenderer } from "./gameplay/HandRenderer";
 import { Hud } from "./gameplay/Hud";
-import { Particles } from "./gameplay/Particles";
 import { createUI } from "./GUI";
 import {
   loadRenderDistance,
@@ -55,7 +54,6 @@ export default class Game {
   world!: World;
   player!: Player;
   private physics!: Physics;
-  private particles!: Particles;
   private breaker!: BlockBreaker;
   private hand!: HandRenderer;
   private hud = new Hud();
@@ -319,12 +317,10 @@ export default class Game {
     this.physics = new Physics(this.scene);
     this.hand = new HandRenderer(textures);
 
-    this.particles = new Particles(textures, this.world);
-    this.scene.add(this.particles.points);
-    this.breaker = new BlockBreaker(this.particles);
+    this.breaker = new BlockBreaker();
 
-    // Compile the particle and hand programs now rather than stalling the
-    // frame the first time a block is hit
+    // Compile the hand program now rather than stalling the frame the first
+    // time a block is hit
     this.renderer.compile(this.scene, this.player.camera);
     this.hand.precompile(this.renderer);
   }
@@ -441,7 +437,6 @@ export default class Game {
       this.sky.fogEnd = end;
     }
     this.world.materials.setFog(this.fogColor, start, end, cylindrical);
-    this.particles.setLighting(this.sky.daylight, this.fogColor, start, end);
     this.renderer.setClearColor(this.fogColor);
     this.hand.setLight(this.sky.daylight, this.skyVisibleAbovePlayer());
   }
@@ -478,11 +473,6 @@ export default class Game {
       this.hand.update(deltaTime, this.player);
     }
     this.world.update(this.player);
-    this.particles.update(
-      deltaTime,
-      this.player.camera,
-      this.renderer.getPixelRatio()
-    );
     if (this.world.initialLoadComplete) {
       this.world.fluids.update(Math.min(deltaTime, 0.25));
       if (currentTime - this.lastSave > this.saveInterval * 1000) {

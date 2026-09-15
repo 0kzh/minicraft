@@ -21,7 +21,7 @@ type ChunkCoord = { x: number; z: number };
 
 export class World extends THREE.Group implements FluidWorld {
   scene: THREE.Scene;
-  renderDistance = 8;
+  renderDistance = 16;
   chunkSize: ChunkSize = {
     width: 16,
     height: 128,

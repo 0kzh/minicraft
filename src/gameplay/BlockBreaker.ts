@@ -3,8 +3,6 @@ import { Physics } from "../Physics";
 import { Player } from "../Player";
 import { World } from "../World";
 
-import { Particles } from "./Particles";
-
 /** Ticks after breaking a block before the next one goes (`MultiPlayerGameMode.destroyDelay`) */
 const BREAK_DELAY = 5;
 
@@ -17,8 +15,6 @@ export class BlockBreaker {
   private mining = false;
   private delay = 0;
   private accumulator = 0;
-
-  constructor(private readonly particles: Particles) {}
 
   /** Mouse held: start (or keep) mining */
   start() {
@@ -52,7 +48,6 @@ export class BlockBreaker {
     if (this.delay > 0) return;
 
     this.delay = BREAK_DELAY;
-    if (!world.removeBlock(coords.x, coords.y, coords.z)) return;
-    this.particles.burst(coords.x, coords.y, coords.z, id);
+    world.removeBlock(coords.x, coords.y, coords.z);
   }
 }
