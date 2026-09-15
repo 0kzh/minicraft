@@ -375,7 +375,9 @@ export class Player {
       REACH,
       (x, y, z) => {
         const id = world.getBlock(x, y, z);
-        return id !== undefined && id !== BlockID.Air && !getBlockDef(id).fluid;
+        if (id === undefined || id === BlockID.Air) return null;
+        const def = getBlockDef(id);
+        return def.fluid ? null : def.box;
       }
     );
 

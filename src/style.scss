@@ -55,7 +55,7 @@ body {
   display: flex;
   width: var(--hotbar-width);
   left: 50%;
-  bottom: calc(var(--px) * 2);
+  bottom: 0;
   transform: translateX(-50%);
 
   #toolbar-bg {
