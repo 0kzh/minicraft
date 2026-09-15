@@ -9,6 +9,7 @@ import {
   inChunkBounds,
 } from "./chunk/ChunkData";
 import { ChunkMaterials } from "./chunk/ChunkMaterial";
+import { ChunkEdits } from "./chunk/lighting";
 import { ChunkMesh, MeshBuffers } from "./chunk/mesher";
 import { DataStore } from "./DataStore";
 import { WorkerPool } from "./WorkerPool";
@@ -40,6 +41,14 @@ export class WorldChunk extends THREE.Group {
   private translucentMesh: THREE.Mesh | null = null;
   private meshing = false;
   private meshVersion = 0;
+  /** Cells changed since the last applied mesh, with the id they had then */
+  private edits = new Map<number, BlockID>();
+
+  /**
+   * Called with the neighbours (bitmask over neighborIndex) whose meshes an
+   * applied remesh found to be stale
+   */
+  onNeighborsAffected: (mask: number) => void = () => {};
 
   constructor(
     chunkX: number,
@@ -92,7 +101,7 @@ export class WorldChunk extends THREE.Group {
    * Rebuilds the chunk geometry on a worker. Safe to call while a previous
    * build is in flight; the stale result is discarded.
    */
-  async remesh(neighborhood: ChunkNeighborhood) {
+  async remesh(neighborhood: ChunkNeighborhood, interactive = false) {
     if (!this.data) return;
     this.meshDirty = false;
     this.meshing = true;
@@ -103,13 +112,38 @@ export class WorldChunk extends THREE.Group {
       chunks: neighborhood.chunks.map((d) => d?.slice() ?? null),
     };
     const buffers = snapshot.chunks.flatMap((d) => (d ? [d.buffer] : []));
-    const mesh = await this.pool.run((api) =>
-      api.buildChunkMesh(this.size, transfer(snapshot, buffers))
+
+    const sent = this.edits;
+    this.edits = new Map();
+    let edits: ChunkEdits | undefined;
+    if (sent.size > 0) {
+      edits = {
+        indices: Int32Array.from(sent.keys()),
+        prevIds: Uint8Array.from(sent.values()),
+      };
+    }
+
+    const mesh = await this.pool.run(
+      (api) =>
+        api.buildChunkMesh(
+          this.size,
+          transfer(snapshot, buffers),
+          edits && transfer(edits, [edits.indices.buffer, edits.prevIds.buffer])
+        ),
+      interactive
     );
 
-    if (version !== this.meshVersion || this.disposed) return;
+    if (version !== this.meshVersion || this.disposed) {
+      // Superseded: the next mesh must still account for these edits, whose
+      // old ids predate anything recorded since
+      for (const [i, id] of sent) this.edits.set(i, id);
+      return;
+    }
     this.meshing = false;
     this.applyMesh(mesh);
+    if (mesh.affectedNeighbors) {
+      this.onNeighborsAffected(mesh.affectedNeighbors);
+    }
   }
 
   get isMeshing() {
@@ -194,9 +228,11 @@ export class WorldChunk extends THREE.Group {
   setBlock(x: number, y: number, z: number, id: BlockID): boolean {
     if (!this.data || !inChunkBounds(this.size, x, y, z)) return false;
     const i = blockIndex(this.size, x, y, z);
-    if (this.data[i] === id) return false;
+    const prev = this.data[i];
+    if (prev === id) return false;
     this.data[i] = id;
     this.dataStore.set(this.chunkX, this.chunkZ, i, id);
+    if (!this.edits.has(i)) this.edits.set(i, prev);
     this.meshDirty = true;
     return true;
   }

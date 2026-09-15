@@ -13,7 +13,7 @@ import {
   ChunkSize,
   NEIGHBORHOOD_CENTER,
 } from "./ChunkData";
-import { LitVolume, MAX_LIGHT } from "./lighting";
+import { ChunkEdits, LitVolume, MAX_LIGHT } from "./lighting";
 
 /**
  * Vertex layout for chunk meshes (see ChunkMaterial):
@@ -39,6 +39,11 @@ export type ChunkMesh = {
   opaque: MeshBuffers;
   cutout: MeshBuffers;
   translucent: MeshBuffers;
+  /**
+   * Neighbours (bitmask over neighborIndex) whose meshes are stale because
+   * of the edits this mesh was built for; 0 when built without edits
+   */
+  affectedNeighbors: number;
 };
 
 export const FACE_POS_X = 0;
@@ -278,8 +283,14 @@ const unpackShade = (
 /**
  * Builds culled, greedy-merged, smooth-lit geometry for a chunk.
  */
-export function meshChunk(size: ChunkSize, n: ChunkNeighborhood): ChunkMesh {
+export function meshChunk(
+  size: ChunkSize,
+  n: ChunkNeighborhood,
+  edits?: ChunkEdits
+): ChunkMesh {
   const vol = new LitVolume(size, n);
+  const affectedNeighbors =
+    edits && edits.indices.length > 0 ? vol.affectedNeighbors(n, edits) : 0;
   const builders = {
     [RenderLayer.Opaque]: new GeometryBuilder(),
     [RenderLayer.Cutout]: new GeometryBuilder(),
@@ -296,6 +307,7 @@ export function meshChunk(size: ChunkSize, n: ChunkNeighborhood): ChunkMesh {
     opaque: builders[RenderLayer.Opaque].build(),
     cutout: builders[RenderLayer.Cutout].build(),
     translucent: builders[RenderLayer.Translucent].build(),
+    affectedNeighbors,
   };
 }
 

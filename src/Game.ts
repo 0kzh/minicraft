@@ -1,53 +1,49 @@
-import { Howl, Howler } from "howler";
+import { Howl } from "howler";
 import * as THREE from "three";
 import Stats from "three/examples/jsm/libs/stats.module";
 
+import { AdaptiveRenderDistance } from "./AdaptiveRenderDistance";
 import audioManager from "./audio/AudioManager";
+import { BlockID } from "./Block";
 import { getBlockDef } from "./Block/blocks";
-import { buildBlockIcons, loadBlockTextures } from "./Block/textures";
+import {
+  BlockTextures,
+  buildBlockIcons,
+  loadBlockTextures,
+} from "./Block/textures";
 import { ChunkMaterials } from "./chunk/ChunkMaterial";
+import { BlockBreaker } from "./gameplay/BlockBreaker";
+import { HandRenderer } from "./gameplay/HandRenderer";
+import { Hud } from "./gameplay/Hud";
 import { createUI } from "./GUI";
 import {
+  loadRenderDistance,
   randomSeed,
   SAVE_VERSION,
+  saveRenderDistance,
   WorldMeta,
   WorldStorage,
 } from "./persistence/WorldStorage";
 import { Physics } from "./Physics";
 import { Player } from "./Player";
+import { Sky } from "./Sky";
 import { numberWithCommas } from "./util";
 import { World } from "./World";
 
-const vertexShader = `
-  varying vec3 worldPosition;
-  void main() {
-      vec4 mPosition = modelMatrix * vec4( position, 1.0 );
-      worldPosition = mPosition.xyz;
-      gl_Position = projectionMatrix * modelViewMatrix * vec4( position, 1.0 );
-  }
-`;
+const MIN_RENDER_DISTANCE = 2;
+const MAX_RENDER_DISTANCE = 32;
 
-const fragmentShader = `
-  uniform vec3 topColor;
-  uniform vec3 bottomColor;
-  uniform float offset;
-  uniform float exponent;
+/** Chromium's pointer-lock cooldown after an Esc exit is 1.25 s */
+const LOCK_RETRY_MS = 1300;
 
-  varying vec3 worldPosition;
-
-  void main() {
-
-    float h = normalize( worldPosition + offset ).y;
-    gl_FragColor = vec4( mix( bottomColor, topColor, max( pow( h, exponent ), 0.0 ) ), 1.0 );
-
-  }
-`;
+const UNDERWATER_FOG = new THREE.Color(0x0a2a55);
+const LAVA_FOG = new THREE.Color(0x7a1e00);
 
 export default class Game {
   private renderer!: THREE.WebGLRenderer;
   private scene!: THREE.Scene;
 
-  private stats!: any;
+  private stats!: Stats;
   private gui: ReturnType<typeof createUI> | null = null;
   private debugVisible = false;
   private clock!: THREE.Clock;
@@ -58,25 +54,23 @@ export default class Game {
   /** Seconds between autosaves of edits and the player position */
   private saveInterval = 3;
 
-  private sunSettings = {
-    distance: 400,
-    cycleLength: 600,
-  };
-  private fogRange = { near: 50, far: 100 };
-
-  private sky!: THREE.Mesh<THREE.BufferGeometry, THREE.ShaderMaterial>;
-  private sun!: THREE.DirectionalLight;
-  private sunHelper!: THREE.DirectionalLightHelper;
+  private sky!: Sky;
   world!: World;
   player!: Player;
   private physics!: Physics;
+  private breaker!: BlockBreaker;
+  private hand!: HandRenderer;
+  private hud = new Hud();
+  private adaptive!: AdaptiveRenderDistance;
+  /** Deferred right-click repeat, like vanilla's 4-tick place delay */
+  private placeCooldown = 0;
+  private placing = false;
+  private wantLock = false;
+  private lockRetried = false;
+  private lockRetry = 0;
 
   private previousTime = 0;
-  private lastShadowUpdate = 0;
-
-  private dayColor = new THREE.Color(0xc0d8ff);
-  private nightColor = new THREE.Color(0x10121e);
-  private sunsetColor = new THREE.Color(0xcc7a00);
+  private readonly fogColor = new THREE.Color();
 
   constructor() {
     this.previousTime = performance.now();
@@ -101,7 +95,19 @@ export default class Game {
 
     const saved = await storage.loadMeta();
     this.meta = saved ?? Game.newMeta();
-    this.initScene(new ChunkMaterials(textures), this.meta.seed);
+    this.initScene(textures, this.meta.seed);
+    this.world.renderDistance = THREE.MathUtils.clamp(
+      loadRenderDistance(this.world.renderDistance),
+      MIN_RENDER_DISTANCE,
+      MAX_RENDER_DISTANCE
+    );
+    this.adaptive = new AdaptiveRenderDistance(
+      this.world.renderDistance,
+      (distance) => {
+        this.world.renderDistance = distance;
+        this.refreshRenderDistanceLabel();
+      }
+    );
 
     if (saved) {
       this.world.dataStore.load(await storage.loadChunks());
@@ -113,6 +119,7 @@ export default class Game {
     } else {
       await storage.saveMeta(this.meta);
     }
+    this.refreshHotbar();
 
     this.initStats();
     this.initListeners();
@@ -156,38 +163,124 @@ export default class Game {
     this.world.regenerate(this.player);
   }
 
+  // ------------------------------------------------------------------ hud
+
+  private refreshHotbar() {
+    this.hud.renderHotbar(this.player.hotbar);
+  }
+
+  setRenderDistance(value: number) {
+    const rd = THREE.MathUtils.clamp(
+      Math.round(value),
+      MIN_RENDER_DISTANCE,
+      MAX_RENDER_DISTANCE
+    );
+    saveRenderDistance(rd);
+    this.adaptive.setMax(rd);
+    this.refreshRenderDistanceLabel();
+    const slider = document.getElementById("render-distance-slider");
+    if (slider instanceof HTMLInputElement) slider.value = String(rd);
+  }
+
+  private refreshRenderDistanceLabel() {
+    const label = document.getElementById("render-distance");
+    if (!label) return;
+    const { max, current } = this.adaptive;
+    label.textContent =
+      current < max
+        ? `Render Distance: ${max} chunks (auto ${current})`
+        : `Render Distance: ${max} chunks`;
+  }
+
+  // ----------------------------------------------------------------- menus
+
   initPauseMenu() {
-    const resume = document.getElementById("resume");
-    resume?.addEventListener("click", () => {
-      audioManager.play("gui.button.press");
-      this.player.controls.lock();
-    });
+    const click = (id: string, handler: () => void) => {
+      document.getElementById(id)?.addEventListener("click", () => {
+        audioManager.play("gui.button.press");
+        handler();
+      });
+    };
 
-    const newWorld = document.getElementById("new-world");
-    newWorld?.addEventListener("click", () => {
-      audioManager.play("gui.button.press");
-      if (!confirm("Create a new world? The current world will be deleted.")) {
-        return;
+    click("resume", () => this.lockControls());
+    // Clicking the dimmed world behind the menu also resumes, since Esc alone
+    // cannot re-lock the pointer in Chromium
+    document.getElementById("pause")?.addEventListener("click", (e) => {
+      if (e.target === e.currentTarget) this.lockControls();
+    });
+    click("new-world", () => {
+      if (confirm("Create a new world? The current world will be deleted.")) {
+        this.newWorld();
       }
-      this.newWorld();
     });
+    click("github", () => window.open("https://github.com/0kzh/minicraft"));
 
-    const githubButton = document.getElementById("github");
-    githubButton?.addEventListener("click", () => {
-      audioManager.play("gui.button.press");
-      window.open("https://github.com/0kzh/minicraft");
+    const slider = document.getElementById("render-distance-slider");
+    if (slider instanceof HTMLInputElement) {
+      slider.min = String(MIN_RENDER_DISTANCE);
+      slider.max = String(MAX_RENDER_DISTANCE);
+      slider.addEventListener("input", () =>
+        this.setRenderDistance(Number(slider.value))
+      );
+      slider.addEventListener("change", () =>
+        audioManager.play("gui.button.press")
+      );
+    }
+    this.setRenderDistance(this.adaptive.max);
+
+    this.player.controls.addEventListener("lock", () => {
+      this.wantLock = false;
+      this.setPauseVisible(false);
     });
-
-    this.player.controls.addEventListener("lock", () =>
-      this.setPauseVisible(false)
+    document.addEventListener("pointerlockerror", () =>
+      this.onPointerLockError()
     );
     this.player.controls.addEventListener("unlock", () => {
+      this.wantLock = false;
+      window.clearTimeout(this.lockRetry);
+      this.breaker.stop();
+      this.placing = false;
       if (this.world.initialLoadComplete) this.setPauseVisible(true);
     });
     this.world.onInitialLoad = () => {
       this.setPauseVisible(true);
       this.flushSave();
     };
+  }
+
+  private lockControls() {
+    if (!this.world.initialLoadComplete || this.player.controls.isLocked)
+      return;
+    window.clearTimeout(this.lockRetry);
+    this.wantLock = true;
+    this.lockRetried = false;
+    this.player.controls.lock();
+  }
+
+  /**
+   * Chromium refuses pointer lock for ~1.25 s after an Esc-triggered exit
+   * (`pointerlockerror`); one retry after the cooldown covers a click that
+   * landed inside it. Esc itself never counts as a user gesture in Chromium,
+   * so a request it triggered can fail for good: the menu then stays up until
+   * the player clicks.
+   */
+  private onPointerLockError() {
+    if (!this.wantLock || this.lockRetried) return;
+    this.lockRetried = true;
+    window.clearTimeout(this.lockRetry);
+    this.lockRetry = window.setTimeout(
+      () => this.player.controls.lock(),
+      LOCK_RETRY_MS
+    );
+  }
+
+  /** Esc toggles between the pause menu and the game */
+  private togglePause() {
+    if (this.player.controls.isLocked) {
+      this.player.controls.unlock();
+    } else {
+      this.lockControls();
+    }
   }
 
   private setPauseVisible(visible: boolean) {
@@ -219,14 +312,8 @@ export default class Game {
   }
 
   private createGUI() {
-    return createUI(
-      this.world,
-      this.player,
-      this.physics,
-      this.fogRange,
-      this.sunSettings,
-      this.sunHelper,
-      () => this.regenerateWorld()
+    return createUI(this.world, this.player, this.physics, this.sky, () =>
+      this.regenerateWorld()
     );
   }
 
@@ -250,69 +337,42 @@ export default class Game {
     ]);
   }
 
+  // ----------------------------------------------------------------- setup
+
   initStats() {
-    this.stats = new (Stats as any)();
+    this.stats = new Stats();
     this.stats.dom.style.display = "none";
     document.body.appendChild(this.stats.dom);
   }
 
-  initScene(chunkMaterials: ChunkMaterials, seed: number) {
+  initScene(textures: BlockTextures, seed: number) {
     this.scene = new THREE.Scene();
 
     this.renderer = new THREE.WebGLRenderer();
-
     this.renderer.setPixelRatio(window.devicePixelRatio);
     this.renderer.setSize(window.innerWidth, window.innerHeight);
     this.renderer.setClearColor(0x80abfe);
-
+    // The hand is drawn in a second pass over the world, so clear by hand
+    this.renderer.autoClear = false;
     document.body.appendChild(this.renderer.domElement);
 
-    // Skybox
-    const uniforms = {
-      topColor: { type: "c", value: new THREE.Color(0xa0c0ff) },
-      bottomColor: { type: "c", value: new THREE.Color(0xffffff) },
-      offset: { type: "f", value: 99 },
-      exponent: { type: "f", value: 0.3 },
-    };
+    this.sky = new Sky();
+    this.scene.add(this.sky.mesh);
 
-    const skyGeo = new THREE.SphereGeometry(4000, 32, 15);
-    const skyMat = new THREE.ShaderMaterial({
-      vertexShader: vertexShader,
-      fragmentShader: fragmentShader,
-      uniforms: uniforms,
-      side: THREE.BackSide,
-    });
-
-    this.sky = new THREE.Mesh(skyGeo, skyMat);
-    this.scene.add(this.sky);
-
-    this.scene.fog = new THREE.Fog(
-      0x80a0e0,
-      this.fogRange.near,
-      this.fogRange.far
-    );
-    this.scene.fog.color.copy(uniforms.bottomColor.value);
-
-    this.sun = new THREE.DirectionalLight();
-    this.sun.intensity = 1.5;
-
-    this.scene.add(this.sun);
-    this.scene.add(this.sun.target);
-    this.sunHelper = new THREE.DirectionalLightHelper(this.sun);
-    this.sunHelper.visible = false;
-    this.scene.add(this.sunHelper);
-
-    const ambient = new THREE.AmbientLight();
-    ambient.intensity = 0.2;
-    this.scene.add(ambient);
-
-    this.world = new World(seed, this.scene, chunkMaterials);
+    this.world = new World(seed, this.scene, new ChunkMaterials(textures));
     this.scene.add(this.world);
 
     this.player = new Player(this.scene);
+    this.player.onHotbarChange = () => this.refreshHotbar();
     this.physics = new Physics(this.scene);
+    this.hand = new HandRenderer(textures);
 
-    this.updateSunPosition(0);
+    this.breaker = new BlockBreaker();
+
+    // Compile the hand program now rather than stalling the frame the first
+    // time a block is hit
+    this.renderer.compile(this.scene, this.player.camera);
+    this.hand.precompile(this.renderer);
   }
 
   initAudio() {
@@ -323,41 +383,19 @@ export default class Game {
     sound.play();
   }
 
-  onMouseDown(event: MouseEvent) {
-    if (this.player.controls.isLocked) {
-      if (event.button === 0 && this.player.selectedCoords) {
-        // Left click
-        const { x, y, z } = this.player.selectedCoords;
-        this.world.removeBlock(x, y, z);
-      } else if (event.button === 2 && this.player.blockPlacementCoords) {
-        if (this.player.activeBlockId != null) {
-          const blockPos = this.player.blockPlacementCoords;
-          const def = getBlockDef(this.player.activeBlockId);
-          if (
-            !def.passable &&
-            this.player.intersectsBlock(blockPos.x, blockPos.y, blockPos.z)
-          )
-            return;
-
-          this.world.addBlock(
-            blockPos.x,
-            blockPos.y,
-            blockPos.z,
-            this.player.activeBlockId
-          );
-        }
-      }
-    }
-  }
-
   initListeners() {
     window.addEventListener("resize", this.onWindowResize.bind(this), false);
     document.addEventListener("mousedown", this.onMouseDown.bind(this), false);
+    document.addEventListener("mouseup", this.onMouseUp.bind(this), false);
     document.addEventListener("contextmenu", (e) => e.preventDefault());
     document.addEventListener("keydown", (e) => {
       if (e.code === "F3") {
         e.preventDefault();
         this.toggleDebug();
+      } else if (e.code === "Escape") {
+        // Browsers release pointer lock on Esc themselves (firing `unlock`);
+        // when the menu is already up, Esc goes back into the game
+        if (!this.player.controls.isLocked) this.togglePause();
       }
     });
     // Save before the tab goes away; IndexedDB writes started here complete
@@ -373,121 +411,101 @@ export default class Game {
     this.renderer.setSize(window.innerWidth, window.innerHeight);
   }
 
-  updateSkyColor() {
-    const elapsedTime = this.clock.getElapsedTime();
-    const cycleDuration = this.sunSettings.cycleLength; // Duration of a day in seconds
-    const cycleTime = elapsedTime % cycleDuration;
+  // ------------------------------------------------------------ interaction
 
-    let topColor: THREE.Color;
-    let bottomColor: THREE.Color;
-
-    if (cycleTime < cycleDuration / 2) {
-      // Day time
-      topColor = this.dayColor
-        .clone()
-        .lerp(this.nightColor, cycleTime / (cycleDuration / 2));
-      this.sun.intensity = 1 - cycleTime / (cycleDuration / 2); // Sun intensity decreases as the day progresses
-    } else {
-      // Night time
-      topColor = this.nightColor
-        .clone()
-        .lerp(
-          this.dayColor,
-          (cycleTime - cycleDuration / 2) / (cycleDuration / 2)
-        );
-      this.sun.intensity =
-        (cycleTime - cycleDuration / 2) / (cycleDuration / 2); // Sun intensity increases as the night progresses
+  onMouseDown(event: MouseEvent) {
+    if (!this.player.controls.isLocked) return;
+    if (event.button === 0) {
+      // Minecraft.startAttack swings even when nothing is hit
+      this.player.swing();
+      this.breaker.start();
+    } else if (event.button === 2) {
+      this.placing = true;
+      this.placeCooldown = 0;
     }
+  }
 
-    const dayStart = 0;
-    const sunsetStart = cycleDuration * 0.4; // Start sunset at 40% of the cycle
-    const nightStart = cycleDuration * 0.5; // Start night at 50% of the cycle
-    const sunriseStart = cycleDuration * 0.9; // Start sunrise at 90% of the cycle
+  onMouseUp(event: MouseEvent) {
+    if (event.button === 0) this.breaker.stop();
+    if (event.button === 2) this.placing = false;
+  }
 
-    if (cycleTime >= dayStart && cycleTime < sunsetStart) {
-      // Day time
-      bottomColor = this.dayColor
-        .clone()
-        .lerp(
-          this.sunsetColor,
-          (cycleTime - dayStart) / (sunsetStart - dayStart)
-        );
-    } else if (cycleTime >= sunsetStart && cycleTime < nightStart) {
-      // Sunset
-      bottomColor = this.sunsetColor
-        .clone()
-        .lerp(
-          this.nightColor,
-          (cycleTime - sunsetStart) / (nightStart - sunsetStart)
-        );
-    } else if (cycleTime >= nightStart && cycleTime < sunriseStart) {
-      // Night time
-      bottomColor = this.nightColor
-        .clone()
-        .lerp(
-          this.sunsetColor,
-          (cycleTime - nightStart) / (sunriseStart - nightStart)
-        );
-    } else {
-      // Sunrise
-      bottomColor = this.sunsetColor
-        .clone()
-        .lerp(
-          this.dayColor,
-          (cycleTime - sunriseStart) / (cycleDuration - sunriseStart)
-        );
-    }
-
-    this.sky.material.uniforms.topColor.value = topColor;
-    this.sky.material.uniforms.bottomColor.value = bottomColor;
-    this.world.materials.sunLight = this.sun.intensity;
-    this.world.materials.time = elapsedTime;
-
-    this.updateFog(topColor);
-
+  private tryPlace() {
+    const target = this.player.blockPlacementCoords;
+    const id = this.player.activeBlockId;
+    if (!target || id === null) return;
+    const def = getBlockDef(id);
     if (
-      performance.now() - this.lastShadowUpdate <
-      this.sunSettings.cycleLength
+      !def.passable &&
+      this.player.intersectsBlock(target.x, target.y, target.z)
     )
       return;
-
-    const sunAngle =
-      ((2 * Math.PI) / cycleDuration) * (cycleTime + cycleDuration / 6); // Calculate the angle of the sun based on the cycle time with a phase shift of T/4
-    this.updateSunPosition(sunAngle);
-
-    this.lastShadowUpdate = performance.now();
-  }
-
-  /**
-   * Thick blue fog while the camera is submerged, otherwise a faint haze
-   * matching the sky
-   */
-  private updateFog(skyColor: THREE.Color) {
-    const fog = this.scene.fog;
-    if (!(fog instanceof THREE.Fog)) return;
-    if (this.player.eyeSubmerged) {
-      const lava = this.player.inLava;
-      fog.color.set(lava ? 0x7a1e00 : 0x0a2a55);
-      fog.near = lava ? 0 : 1;
-      fog.far = lava ? 4 : 22;
-    } else {
-      fog.color.copy(skyColor).multiplyScalar(0.2);
-      fog.near = this.fogRange.near;
-      fog.far = this.fogRange.far;
+    if (this.world.addBlock(target.x, target.y, target.z, id)) {
+      this.player.swing();
     }
   }
 
-  updateSunPosition(angle: number) {
-    const sunX = this.sunSettings.distance * Math.cos(angle); // Calculate the X position of the sun
-    const sunY = this.sunSettings.distance * Math.sin(angle); // Calculate the Y position of the sun
-    this.sun.position.set(sunX, sunY, this.player.camera.position.z); // Update the position of the sun
-    this.sun.position.add(this.player.camera.position);
-
-    this.sun.target.position.copy(this.player.camera.position);
-    this.sun.target.updateMatrixWorld();
-
-    this.sunHelper.update();
+  private updateInteraction(dt: number) {
+    if (!this.player.controls.isLocked) return;
+    this.breaker.update(dt, this.player, this.world);
+    if (this.placing) {
+      this.placeCooldown -= dt;
+      if (this.placeCooldown <= 0) {
+        this.tryPlace();
+        this.placeCooldown = 4 * Physics.TICK;
+      }
+    }
   }
+
+  // ----------------------------------------------------------- atmosphere
+
+  private updateAtmosphere() {
+    const time = this.clock.getElapsedTime();
+    this.sky.update(time, this.player.camera.position);
+    this.world.materials.sunLight = this.sky.daylight;
+    this.world.materials.time = time;
+
+    // Fog fades terrain out over the last chunks of the render distance so
+    // the edge of the loaded world melts into the horizon instead of ending
+    // in a hard silhouette. Cylindrical distance keeps the fade at the same
+    // radius no matter how high the camera is.
+    let start: number;
+    let end: number;
+    let cylindrical = true;
+    if (this.player.eyeSubmerged) {
+      const lava = this.player.inLava;
+      this.fogColor.copy(lava ? LAVA_FOG : UNDERWATER_FOG);
+      start = lava ? 0 : 1;
+      end = lava ? 4 : 22;
+      cylindrical = false;
+    } else {
+      this.fogColor.copy(this.sky.horizon);
+      const radius =
+        (this.world.renderDistance + 0.5) * this.world.chunkSize.width;
+      start = radius * 0.62;
+      end = radius * 0.96;
+      this.sky.fogEnd = end;
+    }
+    this.world.materials.setFog(this.fogColor, start, end, cylindrical);
+    this.renderer.setClearColor(this.fogColor);
+    this.hand.setLight(this.sky.daylight, this.skyVisibleAbovePlayer());
+  }
+
+  /** Whether nothing opaque sits above the eyes (rough stand-in for sky light) */
+  private skyVisibleAbovePlayer() {
+    const p = this.player.position;
+    const x = Math.floor(p.x);
+    const z = Math.floor(p.z);
+    for (let y = Math.floor(p.y) + 1; y < this.world.chunkSize.height; y++) {
+      const id = this.world.getBlock(x, y, z);
+      if (id !== undefined && id !== BlockID.Air && getBlockDef(id).opaque) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  // ------------------------------------------------------------------ loop
 
   draw() {
     const currentTime = performance.now();
@@ -497,10 +515,16 @@ export default class Game {
       this.draw();
     });
 
-    this.updateSkyColor();
+    this.updateAtmosphere();
+    this.adaptive.update(
+      deltaTime,
+      this.world.initialLoadComplete && this.player.controls.isLocked
+    );
 
     if (this.world.initialLoadComplete) {
       this.physics.update(deltaTime, this.player, this.world);
+      this.updateInteraction(deltaTime);
+      this.hand.update(deltaTime, this.player);
     }
     this.world.update(this.player);
     if (this.world.initialLoadComplete) {
@@ -528,8 +552,21 @@ export default class Game {
 
     if (this.stats) this.stats.update();
 
-    this.renderer.render(this.scene, this.player.camera);
+    this.renderWorldAndHand();
 
     this.previousTime = currentTime;
+  }
+
+  /** World pass, then the first-person hand on top */
+  private renderWorldAndHand() {
+    this.renderer.clear();
+    this.renderer.render(this.scene, this.player.camera);
+    if (this.world.initialLoadComplete) {
+      this.hand.render(
+        this.renderer,
+        this.player,
+        this.physics.accumulator / Physics.TICK
+      );
+    }
   }
 }

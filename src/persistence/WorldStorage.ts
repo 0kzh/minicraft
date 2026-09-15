@@ -15,6 +15,26 @@ export type WorldMeta = {
   player?: SavedPlayer;
 };
 
+const RENDER_DISTANCE_KEY = "minicraft.renderDistance";
+
+/** Render distance is a client preference, so it lives outside the world save */
+export function loadRenderDistance(fallback: number): number {
+  try {
+    const v = Number(localStorage.getItem(RENDER_DISTANCE_KEY));
+    return Number.isInteger(v) && v > 0 ? v : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+export function saveRenderDistance(value: number) {
+  try {
+    localStorage.setItem(RENDER_DISTANCE_KEY, String(value));
+  } catch {
+    // Storage unavailable (private mode, quota); the setting just won't stick
+  }
+}
+
 /** Bump when the generator changes enough that old edits no longer line up */
 export const SAVE_VERSION = 1;
 

@@ -21,7 +21,8 @@ class AudioManager {
     });
   }
 
-  play(name: string) {
+  /** Plays a random sample of a sound group; `volume` and `rate` are relative */
+  play(name: string, volume = 1, rate = 1) {
     if (!(name in soundData)) {
       console.error(`Unknown sound: ${name}`);
       return;
@@ -34,7 +35,9 @@ class AudioManager {
     // @ts-ignore
     const options = soundData[name]["sounds"];
     const soundName = prefix + sample<string>(options).split("/").pop();
-    this.sprite.play(soundName);
+    const id = this.sprite.play(soundName);
+    if (volume !== 1) this.sprite.volume(volume, id);
+    if (rate !== 1) this.sprite.rate(rate, id);
   }
 }
 

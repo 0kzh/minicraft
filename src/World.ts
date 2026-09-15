@@ -10,7 +10,6 @@ import {
   neighborIndex,
 } from "./chunk/ChunkData";
 import { ChunkMaterials } from "./chunk/ChunkMaterial";
-import { MAX_LIGHT } from "./chunk/lighting";
 import { DataStore } from "./DataStore";
 import { FluidSim, FluidWorld } from "./fluids/FluidSim";
 import { Player } from "./Player";
@@ -22,7 +21,7 @@ type ChunkCoord = { x: number; z: number };
 
 export class World extends THREE.Group implements FluidWorld {
   scene: THREE.Scene;
-  renderDistance = 8;
+  renderDistance = 18;
   chunkSize: ChunkSize = {
     width: 16,
     height: 128,
@@ -239,7 +238,7 @@ export class World extends THREE.Group implements FluidWorld {
       player.teleport(p.x, p.y, p.z);
     } else {
       const spawn = this.findSpawn(this.spawnPoint);
-      player.teleport(spawn.x, spawn.y + 10, spawn.z);
+      player.placeFeet(spawn.x, spawn.y + 1, spawn.z);
     }
     this.onInitialLoad?.();
   }
@@ -339,6 +338,13 @@ export class World extends THREE.Group implements FluidWorld {
       this.pool,
       this.materials
     );
+    chunk.onNeighborsAffected = (mask) => {
+      for (const [dx, dz] of NEIGHBOR_OFFSETS) {
+        if (!(mask & (1 << neighborIndex(dx, dz)))) continue;
+        const c = this.getChunk(x + dx, z + dz);
+        if (c?.loaded) c.meshDirty = true;
+      }
+    };
     this.chunks.set(this.getChunkKey(x, z), chunk);
     this.add(chunk);
 
@@ -415,41 +421,34 @@ export class World extends THREE.Group implements FluidWorld {
     const { x: bx, y: by, z: bz } = coords.block;
     if (!chunk.setBlock(bx, by, bz, id)) return false;
 
-    // Remesh the edited chunk immediately so edits feel instant; neighbours
-    // that the change can light or shade follow on the next update
-    if (immediate) chunk.remesh(this.getNeighborhood(chunk));
-    const w = this.chunkSize.width;
-    const reach = MAX_LIGHT + 1;
-    for (const [dx, dz] of NEIGHBOR_OFFSETS) {
-      const nearX = dx === 0 || (dx < 0 ? bx < reach : w - 1 - bx < reach);
-      const nearZ = dz === 0 || (dz < 0 ? bz < reach : w - 1 - bz < reach);
-      if (!nearX || !nearZ) continue;
-      const c = this.getChunk(coords.chunk.x + dx, coords.chunk.z + dz);
-      if (c?.loaded) c.meshDirty = true;
-    }
+    // Remesh the edited chunk right away on the interactive worker so edits
+    // feel instant; the worker reports which neighbours the change actually
+    // reached (culling, AO or light) and only those are remeshed afterwards
+    if (immediate) chunk.remesh(this.getNeighborhood(chunk), true);
     return true;
   }
 
   /**
    * Adds a new block at (x, y, z)
    */
-  addBlock(x: number, y: number, z: number, block: BlockID) {
+  addBlock(x: number, y: number, z: number, block: BlockID): boolean {
     const existing = this.getBlock(x, y, z);
-    if (existing === undefined) return;
-    if (existing !== BlockID.Air && !getBlockDef(existing).fluid) return;
-    if (this.setBlock(x, y, z, block)) {
-      this.playBlockSound(block);
-      this.fluids.scheduleAround(x, y, z);
-    }
+    if (existing === undefined) return false;
+    if (existing !== BlockID.Air && !getBlockDef(existing).fluid) return false;
+    if (!this.setBlock(x, y, z, block)) return false;
+    this.playBlockSound(block);
+    this.fluids.scheduleAround(x, y, z);
+    return true;
   }
 
-  removeBlock(x: number, y: number, z: number) {
+  removeBlock(x: number, y: number, z: number): boolean {
     const id = this.getBlock(x, y, z);
     if (id === undefined || id === BlockID.Air || id === BlockID.Bedrock) {
-      return;
+      return false;
     }
 
-    if (this.setBlock(x, y, z, BlockID.Air)) {
+    const removed = this.setBlock(x, y, z, BlockID.Air);
+    if (removed) {
       this.playBlockSound(id);
       this.fluids.scheduleAround(x, y, z);
     }
@@ -464,6 +463,12 @@ export class World extends THREE.Group implements FluidWorld {
     ) {
       this.removeBlock(x, y + 1, z);
     }
+    return removed;
+  }
+
+  /** Nearest dry land to the world spawn, for respawning */
+  getSpawn(): THREE.Vector3 {
+    return this.findSpawn(this.spawnPoint);
   }
 
   playBlockSound(id: BlockID) {

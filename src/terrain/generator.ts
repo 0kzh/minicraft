@@ -280,6 +280,10 @@ type Carver = {
 
 /** Cells this close to a submerged floor are never carved, keeping seas sealed */
 const SEA_FLOOR_SEAL = 4;
+/** Columns this close above sea level count as coast: no ravines, flooded caves */
+const COAST_BAND = 6;
+/** Columns within this many blocks of open sea also count as coast */
+const COAST_REACH = PAD;
 
 /**
  * Whether the cell at world (wx, y, wz) in a column of the given height is
@@ -312,7 +316,7 @@ function isCarved(
   if (a * a + b * b < radius * radius) return true;
 
   // Ravines: deep narrow canyons open to the sky
-  if (cv.ravines && !submerged && col.height > sea + 1) {
+  if (cv.ravines && !submerged && col.height > sea + COAST_BAND) {
     const gate = noise.noise2(Channel.Ravine, wx / 900 + 50, wz / 900);
     if (gate > 0.32) {
       const bottom = Math.max(12, col.height - 42);
@@ -467,7 +471,7 @@ export function generateChunkData(
       const veg = params.vegetation.density;
       if (def.snowy) {
         // Cold biomes are dusted with a thin snow layer rather than full blocks
-        if (at(lx, y + 1, lz) === BlockID.Air)
+        if (surface !== BlockID.Snow && at(lx, y + 1, lz) === BlockID.Air)
           put(lx, y + 1, lz, BlockID.SnowLayer);
       } else if (surface === BlockID.Sand) {
         if (plant < def.cactusChance * veg) {
@@ -513,6 +517,12 @@ function surfaceBlock(col: Column, sea: number): BlockID {
   if (col.biome === Biome.Mountains) {
     // Grass clings to the gentler lower slopes
     if (col.height < 98 && col.surface > 0.25) top = BlockID.Grass;
+  }
+  if (col.biome === Biome.SnowyPeaks) {
+    // Peaks are bare stone under the snow cover; full snow blocks only
+    // build up in patches on the gentler ground (vanilla `jagged_peaks`
+    // keeps stone on steep faces)
+    if (col.surface > 0.45) top = BlockID.Snow;
   }
   if (def.snowy && top === BlockID.Grass) top = BlockID.SnowGrass;
   return top;
@@ -595,6 +605,19 @@ function carveCaves(
   const sea = params.terrain.seaLevel;
   const lava = params.caves.lavaLevel;
   const stride = w * w;
+  // A cave or canyon cell below sea level that could open onto the sea
+  // (steep cliffs put deep water right next to tall columns) is water,
+  // like Minecraft's aquifers, so the sea never has an unsupported side
+  const nearSea = (x: number, z: number) => {
+    for (let dz = -COAST_REACH; dz <= COAST_REACH; dz++) {
+      for (let dx = -COAST_REACH; dx <= COAST_REACH; dx++) {
+        if (columns[(z + dz + PAD) * pw + (x + dx + PAD)].height < sea) {
+          return true;
+        }
+      }
+    }
+    return false;
+  };
   for (let z = 0; z < w; z++) {
     for (let x = 0; x < w; x++) {
       const col = columns[(z + PAD) * pw + (x + PAD)];
@@ -602,12 +625,14 @@ function carveCaves(
       const wz = originZ + z;
       const base = blockIndex(size, x, 0, z);
       const submerged = col.height < sea;
+      const flooded =
+        submerged || col.height <= sea + COAST_BAND || nearSea(x, z);
       const top = Math.min(col.height, size.height - 1);
       for (let y = 4; y <= top; y++) {
         if (!isCarved(noise, params, carver, wx, y, wz, col)) continue;
         let id = BlockID.Air;
         if (y <= lava) id = BlockID.Lava;
-        else if (submerged) id = BlockID.Water;
+        else if (flooded && y <= sea) id = BlockID.Water;
         data[base + y * stride] = id;
       }
     }

@@ -2,6 +2,7 @@
 import { transfer } from "comlink";
 
 import { ChunkNeighborhood, ChunkSize } from "./chunk/ChunkData";
+import { ChunkEdits } from "./chunk/lighting";
 import { ChunkMesh, meshChunk } from "./chunk/mesher";
 import { generateChunkData } from "./terrain/generator";
 import { WorldParams } from "./WorldParams";
@@ -18,9 +19,10 @@ export const generateChunk = (
 
 export const buildChunkMesh = (
   size: ChunkSize,
-  neighborhood: ChunkNeighborhood
+  neighborhood: ChunkNeighborhood,
+  edits?: ChunkEdits
 ): ChunkMesh => {
-  const mesh = meshChunk(size, neighborhood);
+  const mesh = meshChunk(size, neighborhood, edits);
   const buffers = [mesh.opaque, mesh.cutout, mesh.translucent].flatMap((m) => [
     m.positions.buffer,
     m.uvs.buffer,

@@ -67,6 +67,13 @@ export class Physics {
   /** Vertical kick when swimming into a ledge the player can climb */
   static FLUID_CLIMB_VELOCITY = 0.3;
 
+  /** Creative flight: vanilla `Abilities.flyingSpeed` (x2 when sprinting in `Player.getFlyingSpeed`) */
+  static FLY_SPEED = 0.05;
+  /** `LocalPlayer.aiStep`: jump/sneak add `flyingSpeed * 3` to the vertical motion each tick */
+  static FLY_VERTICAL_ACCELERATION = Physics.FLY_SPEED * 3;
+  /** `Player.travel`: the vertical motion is multiplied by 0.6 every tick while flying */
+  static FLY_VERTICAL_FRICTION = 0.6;
+
   accumulator = 0;
   helpers: THREE.Group;
 
@@ -90,8 +97,15 @@ export class Physics {
 
   private tick(player: Player, world: World) {
     player.beginTick();
+    player.tickSwing();
     this.sampleFluid(player, world, player.getBox());
     player.tickInput();
+
+    if (player.flying) {
+      this.travelFlying(player, world, player.moveInput());
+      player.tickSprint();
+      return;
+    }
 
     if (player.jumping) {
       if (player.inFluid && player.fluidDepth > Physics.SWIM_DEPTH) {
@@ -113,6 +127,7 @@ export class Physics {
     player.tickStepSounds(this.blockUnderneath(player, world));
   }
 
+  /** Vanilla `LivingEntity.jumpFromGround` */
   private jump(player: Player) {
     player.velocity.y = Physics.JUMP_VELOCITY;
     if (player.isSprinting) {
@@ -121,6 +136,30 @@ export class Physics {
       player.velocity.z -= Math.cos(yaw) * Physics.SPRINT_JUMP_BOOST;
     }
     player.jumpCooldown = Physics.JUMP_COOLDOWN;
+  }
+
+  /**
+   * Creative flight, per tick like vanilla:
+   *   aiStep:  vy += (jump - sneak) * flyingSpeed * 3
+   *   travel:  v += input * flyingSpeed (x2 sprinting); move; vx,vz *= 0.91; vy *= 0.6
+   * No gravity applies, and vy's 0.6 drag is what makes climbing snappy:
+   * it reaches its 0.375 blocks/tick (7.5 m/s) top speed within a few ticks.
+   */
+  private travelFlying(player: Player, world: World, move: THREE.Vector2) {
+    const v = player.velocity;
+    const lift = (player.ascending ? 1 : 0) - (player.descending ? 1 : 0);
+    if (lift !== 0) v.y += lift * Physics.FLY_VERTICAL_ACCELERATION;
+
+    const speed = Physics.FLY_SPEED * (player.isSprinting ? 2 : 1);
+    this.accelerate(player, move, speed);
+
+    this.move(player, world);
+    // Touching down ends flight like vanilla
+    if (player.onGround && player.descending) player.flying = false;
+
+    v.x *= Physics.AIR_FRICTION;
+    v.z *= Physics.AIR_FRICTION;
+    v.y *= Physics.FLY_VERTICAL_FRICTION;
   }
 
   private travelOnLand(player: Player, world: World, move: THREE.Vector2) {
