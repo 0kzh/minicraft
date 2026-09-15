@@ -2,6 +2,7 @@ import { Howl } from "howler";
 import * as THREE from "three";
 import Stats from "three/examples/jsm/libs/stats.module";
 
+import { AdaptiveRenderDistance } from "./AdaptiveRenderDistance";
 import audioManager from "./audio/AudioManager";
 import { BlockID } from "./Block";
 import { getBlockDef } from "./Block/blocks";
@@ -32,6 +33,9 @@ import { World } from "./World";
 const MIN_RENDER_DISTANCE = 2;
 const MAX_RENDER_DISTANCE = 32;
 
+/** Chromium's pointer-lock cooldown after an Esc exit is 1.25 s */
+const LOCK_RETRY_MS = 1300;
+
 const UNDERWATER_FOG = new THREE.Color(0x0a2a55);
 const LAVA_FOG = new THREE.Color(0x7a1e00);
 
@@ -57,9 +61,13 @@ export default class Game {
   private breaker!: BlockBreaker;
   private hand!: HandRenderer;
   private hud = new Hud();
+  private adaptive!: AdaptiveRenderDistance;
   /** Deferred right-click repeat, like vanilla's 4-tick place delay */
   private placeCooldown = 0;
   private placing = false;
+  private wantLock = false;
+  private lockRetried = false;
+  private lockRetry = 0;
 
   private previousTime = 0;
   private readonly fogColor = new THREE.Color();
@@ -92,6 +100,13 @@ export default class Game {
       loadRenderDistance(this.world.renderDistance),
       MIN_RENDER_DISTANCE,
       MAX_RENDER_DISTANCE
+    );
+    this.adaptive = new AdaptiveRenderDistance(
+      this.world.renderDistance,
+      (distance) => {
+        this.world.renderDistance = distance;
+        this.refreshRenderDistanceLabel();
+      }
     );
 
     if (saved) {
@@ -160,12 +175,21 @@ export default class Game {
       MIN_RENDER_DISTANCE,
       MAX_RENDER_DISTANCE
     );
-    this.world.renderDistance = rd;
     saveRenderDistance(rd);
-    const label = document.getElementById("render-distance");
-    if (label) label.textContent = `Render Distance: ${rd} chunks`;
+    this.adaptive.setMax(rd);
+    this.refreshRenderDistanceLabel();
     const slider = document.getElementById("render-distance-slider");
     if (slider instanceof HTMLInputElement) slider.value = String(rd);
+  }
+
+  private refreshRenderDistanceLabel() {
+    const label = document.getElementById("render-distance");
+    if (!label) return;
+    const { max, current } = this.adaptive;
+    label.textContent =
+      current < max
+        ? `Render Distance: ${max} chunks (auto ${current})`
+        : `Render Distance: ${max} chunks`;
   }
 
   // ----------------------------------------------------------------- menus
@@ -179,6 +203,11 @@ export default class Game {
     };
 
     click("resume", () => this.lockControls());
+    // Clicking the dimmed world behind the menu also resumes, since Esc alone
+    // cannot re-lock the pointer in Chromium
+    document.getElementById("pause")?.addEventListener("click", (e) => {
+      if (e.target === e.currentTarget) this.lockControls();
+    });
     click("new-world", () => {
       if (confirm("Create a new world? The current world will be deleted.")) {
         this.newWorld();
@@ -197,12 +226,18 @@ export default class Game {
         audioManager.play("gui.button.press")
       );
     }
-    this.setRenderDistance(this.world.renderDistance);
+    this.setRenderDistance(this.adaptive.max);
 
-    this.player.controls.addEventListener("lock", () =>
-      this.setPauseVisible(false)
+    this.player.controls.addEventListener("lock", () => {
+      this.wantLock = false;
+      this.setPauseVisible(false);
+    });
+    document.addEventListener("pointerlockerror", () =>
+      this.onPointerLockError()
     );
     this.player.controls.addEventListener("unlock", () => {
+      this.wantLock = false;
+      window.clearTimeout(this.lockRetry);
       this.breaker.stop();
       this.placing = false;
       if (this.world.initialLoadComplete) this.setPauseVisible(true);
@@ -214,14 +249,29 @@ export default class Game {
   }
 
   private lockControls() {
-    if (!this.world.initialLoadComplete) return;
-    try {
-      this.player.controls.lock();
-    } catch (e) {
-      // Browsers throw when pointer lock is requested too soon after an
-      // Esc-triggered exit; the menu just stays up until the next attempt
-      console.warn("Pointer lock unavailable", e);
-    }
+    if (!this.world.initialLoadComplete || this.player.controls.isLocked)
+      return;
+    window.clearTimeout(this.lockRetry);
+    this.wantLock = true;
+    this.lockRetried = false;
+    this.player.controls.lock();
+  }
+
+  /**
+   * Chromium refuses pointer lock for ~1.25 s after an Esc-triggered exit
+   * (`pointerlockerror`); one retry after the cooldown covers a click that
+   * landed inside it. Esc itself never counts as a user gesture in Chromium,
+   * so a request it triggered can fail for good: the menu then stays up until
+   * the player clicks.
+   */
+  private onPointerLockError() {
+    if (!this.wantLock || this.lockRetried) return;
+    this.lockRetried = true;
+    window.clearTimeout(this.lockRetry);
+    this.lockRetry = window.setTimeout(
+      () => this.player.controls.lock(),
+      LOCK_RETRY_MS
+    );
   }
 
   /** Esc toggles between the pause menu and the game */
@@ -466,6 +516,10 @@ export default class Game {
     });
 
     this.updateAtmosphere();
+    this.adaptive.update(
+      deltaTime,
+      this.world.initialLoadComplete && this.player.controls.isLocked
+    );
 
     if (this.world.initialLoadComplete) {
       this.physics.update(deltaTime, this.player, this.world);
