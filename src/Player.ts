@@ -395,15 +395,18 @@ export class Player {
       hit.normal.y,
       hit.normal.z
     );
-    this.blockPlacementCoords = new THREE.Vector3(
-      hit.x + hit.normal.x,
-      hit.y + hit.normal.y,
-      hit.z + hit.normal.z
-    );
-
     const hitDef = getBlockDef(
       world.getBlock(hit.x, hit.y, hit.z) ?? BlockID.Air
     );
+    // BlockPlaceContext: a replaceable target (snow layer, plants) is built
+    // into rather than against
+    this.blockPlacementCoords = hitDef.replaceable
+      ? this.selectedCoords.clone()
+      : new THREE.Vector3(
+          hit.x + hit.normal.x,
+          hit.y + hit.normal.y,
+          hit.z + hit.normal.z
+        );
     const [x0, y0, z0, x1, y1, z1] = hitDef.box;
     this.selectionHelper.position.set(
       hit.x + (x0 + x1) / 2,

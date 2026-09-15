@@ -86,6 +86,8 @@ export type BlockDef = {
   opaque: boolean;
   /** Player and physics can pass through */
   passable: boolean;
+  /** Placing a block into this cell replaces it (vanilla `canBeReplaced`) */
+  replaceable: boolean;
   /** Collision and render bounds for Cube/Box geometry */
   box: BlockBox;
   /** Liquid: slows and buoys the player, tints the view when submerged */
@@ -142,6 +144,7 @@ const cube = (
   layer: RenderLayer.Opaque,
   opaque: true,
   passable: false,
+  replaceable: false,
   box: FULL_BOX,
   fluid: false,
   fluidSource: id,
@@ -201,6 +204,7 @@ const fluid = (
     layer: RenderLayer.Translucent,
     opaque: false,
     passable: true,
+    replaceable: true,
     fluid: true,
     lightOpacity: 2,
     cullSelf: true,
@@ -243,6 +247,7 @@ const cross = (
   layer: RenderLayer.Cutout,
   opaque: false,
   passable: true,
+  replaceable: true,
   box: bounds,
   fluid: false,
   fluidSource: id,
@@ -265,6 +270,7 @@ const defs: BlockDef[] = [
     layer: RenderLayer.Opaque,
     opaque: false,
     passable: true,
+    replaceable: true,
     box: FULL_BOX,
     fluid: false,
     fluidSource: BlockID.Air,
@@ -364,7 +370,8 @@ const defs: BlockDef[] = [
     "snow_layer",
     "snow",
     [0, 0, 0, 1, SNOW_LAYER_HEIGHT, 1],
-    "snow"
+    "snow",
+    { replaceable: true }
   ),
   cross(BlockID.DeadBush, "dead_bush", "dead_bush", ""),
   cube(BlockID.GoldOre, "gold_ore", "gold_ore", "", "stone"),
