@@ -3,7 +3,6 @@ import * as THREE from "three";
 import Stats from "three/examples/jsm/libs/stats.module";
 
 import { AdaptiveRenderDistance } from "./AdaptiveRenderDistance";
-import { Clouds } from "./Clouds";
 import audioManager from "./audio/AudioManager";
 import { BlockID } from "./Block";
 import { getBlockDef } from "./Block/blocks";
@@ -13,6 +12,7 @@ import {
   loadBlockTextures,
 } from "./Block/textures";
 import { ChunkMaterials } from "./chunk/ChunkMaterial";
+import { Clouds } from "./Clouds";
 import { BlockBreaker } from "./gameplay/BlockBreaker";
 import { HandRenderer } from "./gameplay/HandRenderer";
 import { Hud } from "./gameplay/Hud";

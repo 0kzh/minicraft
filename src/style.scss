@@ -45,12 +45,17 @@ body {
   transform: translate(-50%, -50%);
 }
 
+/* Vanilla hotbar geometry in GUI pixels (hotbar.png is 182x22): slots every
+   20 px, 16 px item icons at (3 + 20i, 3), 24 px selection frame at -1 */
 #toolbar {
+  --hotbar-width: min(728px, 45vw);
+  --px: calc(var(--hotbar-width) / 182);
+  --selected: 0;
   position: absolute;
   display: flex;
-  width: min(720px, 45vw);
+  width: var(--hotbar-width);
   left: 50%;
-  bottom: 0px;
+  bottom: calc(var(--px) * 2);
   transform: translateX(-50%);
 
   #toolbar-bg {
@@ -61,18 +66,18 @@ body {
 
   #toolbar-active-border {
     position: absolute;
-    left: 0%;
-    width: 13.5%;
-    transform: translateX(-4.5%) translateY(-4.5%);
+    top: calc(var(--px) * -1);
+    left: calc(var(--px) * (20 * var(--selected) - 1));
+    width: calc(var(--px) * 24);
+    height: calc(var(--px) * 24);
     image-rendering: pixelated;
   }
 
   .toolbar-slot {
     position: absolute;
-    left: 0%;
-    width: 13.5%;
-    aspect-ratio: 1;
-    transform: translateX(-4.5%) translateY(-4.5%) scale(0.65);
+    top: calc(var(--px) * 3);
+    width: calc(var(--px) * 16);
+    height: calc(var(--px) * 16);
     image-rendering: pixelated;
     background-size: 100% 100%;
     background-repeat: no-repeat;
@@ -89,40 +94,10 @@ body {
     }
   }
 
-  #toolbar-slot-1 {
-    left: 0%;
-  }
-
-  #toolbar-slot-2 {
-    left: 11%;
-  }
-
-  #toolbar-slot-3 {
-    left: 22%;
-  }
-
-  #toolbar-slot-4 {
-    left: 33%;
-  }
-
-  #toolbar-slot-5 {
-    left: 44%;
-  }
-
-  #toolbar-slot-6 {
-    left: 55%;
-  }
-
-  #toolbar-slot-7 {
-    left: 66%;
-  }
-
-  #toolbar-slot-8 {
-    left: 77%;
-  }
-
-  #toolbar-slot-9 {
-    left: 88%;
+  @for $i from 1 through 9 {
+    #toolbar-slot-#{$i} {
+      left: calc(var(--px) * (3 + 20 * #{$i - 1}));
+    }
   }
 }
 
@@ -218,7 +193,6 @@ body {
     color: white;
     text-shadow: 1.5px 1.5px 0px rgba(75, 75, 75, 0.8);
   }
-
 }
 
 .mc-button {

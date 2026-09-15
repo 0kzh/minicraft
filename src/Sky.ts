@@ -77,15 +77,15 @@ const fragmentShader = /* glsl */ `
     }
 
     // Sun and moon are textured quads blended additively (SRC_ALPHA, ONE)
-    vec2 sunUv = celestialUv(dir, uSunDir, 15.0);
+    // Quads are Java's sizes (sun 60 wide, moon 40 wide at distance 100); the
+    // Bedrock textures keep the bright body in the middle quarter of each
+    // 32 px cell with a soft halo around it
+    vec2 sunUv = celestialUv(dir, uSunDir, 30.0);
     if (inQuad(sunUv)) {
       vec4 sun = texture2D(uSun, sunUv);
       c += sun.rgb * sun.a;
     }
-    // Bedrock's moon_phases.png keeps the 8 px moon in the middle of each
-    // 32 px cell (the rest is its halo), so the quad is 4x wider than Java's
-    // for the disc itself to come out 20 wide
-    vec2 moonUv = celestialUv(dir, -uSunDir, 40.0);
+    vec2 moonUv = celestialUv(dir, -uSunDir, 20.0);
     if (inQuad(moonUv)) {
       vec2 cell = vec2(mod(uMoonPhase, 4.0), floor(uMoonPhase / 4.0));
       vec4 moon = texture2D(uMoon, (moonUv + cell) / vec2(4.0, 2.0));

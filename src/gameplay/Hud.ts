@@ -15,9 +15,6 @@ export class Hud {
           id === null ? "none" : `url('${getBlockDef(id).uiTexture}')`;
       }
     }
-    byId("toolbar-active-border")?.setAttribute(
-      "style",
-      `left: ${inventory.selected * 11}%`
-    );
+    byId("toolbar")?.style.setProperty("--selected", `${inventory.selected}`);
   }
 }
