@@ -302,16 +302,16 @@ export class Player {
     return this.isSprinting ? Physics.SPRINT_MULTIPLIER : 1;
   }
 
-  /** Plays a footstep for roughly every block walked on the ground */
+  /** Plays a footstep for roughly every block walked on the ground; vanilla skips them while sneaking (`isSteppingCarefully`) */
   tickStepSounds(blockUnderneath: BlockID) {
-    if (!this.onGround || this.inFluid) return;
+    if (!this.onGround || this.inFluid || this.isSneaking) return;
     const dx = this.pos.x - this.prevPos.x;
     const dz = this.pos.z - this.prevPos.z;
     this.#walkDistance += Math.sqrt(dx * dx + dz * dz);
     if (this.#walkDistance >= this.#nextStep) {
       this.#nextStep = this.#walkDistance + STEP_DISTANCE;
       if (blockUnderneath !== BlockID.Air) {
-        audioManager.play(`step.${getBlockDef(blockUnderneath).sound}`);
+        audioManager.playStep(getBlockDef(blockUnderneath).sound);
       }
     }
   }

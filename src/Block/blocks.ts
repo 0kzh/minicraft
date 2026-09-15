@@ -75,7 +75,9 @@ export type SoundGroup =
   | "stone"
   | "sand"
   | "snow"
-  | "gravel";
+  | "gravel"
+  | "cloth"
+  | "glass";
 
 export type BlockDef = {
   id: BlockID;
@@ -291,7 +293,7 @@ const defs: BlockDef[] = [
     "",
     "grass"
   ),
-  cube(BlockID.Dirt, "dirt", "dirt", "", "grass"),
+  cube(BlockID.Dirt, "dirt", "dirt", "", "gravel"),
   cube(BlockID.Stone, "stone", "stone", "", "stone"),
   cube(BlockID.CoalOre, "coal_ore", "coal_ore", "", "stone"),
   cube(BlockID.IronOre, "iron_ore", "iron_ore", "", "stone"),
@@ -313,7 +315,7 @@ const defs: BlockDef[] = [
     "",
     FLOWER_BOX
   ),
-  cube(BlockID.RedstoneLamp, "redstone_lamp", "redstone_lamp", "", "stone", {
+  cube(BlockID.RedstoneLamp, "redstone_lamp", "redstone_lamp", "", "glass", {
     emissive: true,
     lightEmission: 15,
   }),
@@ -338,7 +340,7 @@ const defs: BlockDef[] = [
     "snow_grass",
     { side: "snow_grass_side", top: "snow", bottom: "dirt" },
     "",
-    "snow"
+    "grass"
   ),
   cube(BlockID.Snow, "snow", "snow", "", "snow"),
   cube(
@@ -362,7 +364,7 @@ const defs: BlockDef[] = [
     "cactus",
     { side: "cactus_side", top: "cactus_top" },
     [1 / 16, 0, 1 / 16, 15 / 16, 1, 15 / 16],
-    "grass",
+    "cloth",
     { cullSelf: true }
   ),
   box(

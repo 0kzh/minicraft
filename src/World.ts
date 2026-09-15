@@ -436,7 +436,7 @@ export class World extends THREE.Group implements FluidWorld {
     if (existing === undefined) return false;
     if (!getBlockDef(existing).replaceable) return false;
     if (!this.setBlock(x, y, z, block)) return false;
-    this.playBlockSound(block);
+    audioManager.playPlace(getBlockDef(block).sound);
     this.fluids.scheduleAround(x, y, z);
     return true;
   }
@@ -449,7 +449,7 @@ export class World extends THREE.Group implements FluidWorld {
 
     const removed = this.setBlock(x, y, z, BlockID.Air);
     if (removed) {
-      this.playBlockSound(id);
+      audioManager.playBreak(getBlockDef(id).sound);
       this.fluids.scheduleAround(x, y, z);
     }
 
@@ -469,10 +469,6 @@ export class World extends THREE.Group implements FluidWorld {
   /** Nearest dry land to the world spawn, for respawning */
   getSpawn(): THREE.Vector3 {
     return this.findSpawn(this.spawnPoint);
-  }
-
-  playBlockSound(id: BlockID) {
-    audioManager.play(`dig.${getBlockDef(id).sound}`);
   }
 
   /**

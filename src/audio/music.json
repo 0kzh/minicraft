@@ -1,0 +1,238 @@
+{
+  "music.game": [
+    {
+      "name": "music/game/a_familiar_room",
+      "hash": "7f77e186063198933a7dd67eb492ae4d74839dd9",
+      "volume": 0.4,
+      "weight": 1
+    },
+    {
+      "name": "music/game/below_and_above",
+      "hash": "29617ea7a07d4c3ed1b98b752b5740b8ca2e7cbf",
+      "volume": 0.4,
+      "weight": 1
+    },
+    {
+      "name": "music/game/broken_clocks",
+      "hash": "6095be3382a6b9897a7d0caf93131436e5cea4d6",
+      "volume": 0.4,
+      "weight": 1
+    },
+    {
+      "name": "music/game/clark",
+      "hash": "bbb301a6ed65e5e92eb97b601b9ea9979324bccf",
+      "volume": 1,
+      "weight": 1
+    },
+    {
+      "name": "music/game/comforting_memories",
+      "hash": "1c9aa4f2710ac7025a56f99feb132a29cf5a2b64",
+      "volume": 0.4,
+      "weight": 1
+    },
+    {
+      "name": "music/game/danny",
+      "hash": "603fd41ebe3eac0795ebfa0b31195be1866d1e9c",
+      "volume": 1,
+      "weight": 1
+    },
+    {
+      "name": "music/game/dry_hands",
+      "hash": "53976ed366c97ad86c1d7ce21497c9985f33d4f1",
+      "volume": 1,
+      "weight": 1
+    },
+    {
+      "name": "music/game/ebb",
+      "hash": "5e1288786fa59686f2c000ed90c2e3b89d125460",
+      "volume": 0.4,
+      "weight": 2
+    },
+    {
+      "name": "music/game/featherfall",
+      "hash": "0c62057c8a75b57a8f06e7c1bc1b21a7f88d4820",
+      "volume": 0.4,
+      "weight": 1
+    },
+    {
+      "name": "music/game/fireflies",
+      "hash": "154255dcccfcde8af7e3727a0ccaaa72ea359ff5",
+      "volume": 0.4,
+      "weight": 1
+    },
+    {
+      "name": "music/game/floating_dream",
+      "hash": "dec42f5a10b6a0018594bdb868882ddccf04f52e",
+      "volume": 0.4,
+      "weight": 1
+    },
+    {
+      "name": "music/game/haggstrom",
+      "hash": "c25705e16f1d51a56a2b0a4604250b3844ceadcf",
+      "volume": 1,
+      "weight": 1
+    },
+    {
+      "name": "music/game/home",
+      "hash": "c00e50dc3ac0d08faf529dff0e6e620a81221f47",
+      "volume": 0.4,
+      "weight": 2
+    },
+    {
+      "name": "music/game/key",
+      "hash": "8ee9d608f0bbb2d0513af7bfc1b55e591ada05ea",
+      "volume": 1,
+      "weight": 1
+    },
+    {
+      "name": "music/game/komorebi",
+      "hash": "c3e6d3f34a7221360ad11d18335edd6709df4609",
+      "volume": 0.8,
+      "weight": 1
+    },
+    {
+      "name": "music/game/left_to_bloom",
+      "hash": "a971ae2004798c14bc3387cfd1b89420092b3263",
+      "volume": 0.4,
+      "weight": 1
+    },
+    {
+      "name": "music/game/lilypad",
+      "hash": "b023b1ddac5e027086ef04a9da7234e73a4502a6",
+      "volume": 0.4,
+      "weight": 1
+    },
+    {
+      "name": "music/game/living_mice",
+      "hash": "532fdae2fd43bc046f78a1b7b79f28161f25fc4c",
+      "volume": 1,
+      "weight": 1
+    },
+    {
+      "name": "music/game/memories",
+      "hash": "8a91604916a4b53e0a3a913917f5fec0539c6a2e",
+      "volume": 0.4,
+      "weight": 2
+    },
+    {
+      "name": "music/game/mice_on_venus",
+      "hash": "06a2f38a094573652977232abcc4f268cf6745ad",
+      "volume": 1,
+      "weight": 1
+    },
+    {
+      "name": "music/game/minecraft",
+      "hash": "7f7777e5d5b163c5d64201fd53e5682599548a49",
+      "volume": 1,
+      "weight": 1
+    },
+    {
+      "name": "music/game/nightly",
+      "hash": "aebe56d3016657dfeacfadb953424079c7e3d32c",
+      "volume": 0.4,
+      "weight": 2
+    },
+    {
+      "name": "music/game/one_more_day",
+      "hash": "324f58251829988ad3f4a5f7dc39b647fdcc2639",
+      "volume": 0.4,
+      "weight": 1
+    },
+    {
+      "name": "music/game/os_piano",
+      "hash": "a32d22b74e0a451083c99b68a0119b501652ccd8",
+      "volume": 0.4,
+      "weight": 1
+    },
+    {
+      "name": "music/game/oxygene",
+      "hash": "b99889832d7f9abe35725506e4cd48075e25f957",
+      "volume": 1,
+      "weight": 1
+    },
+    {
+      "name": "music/game/puzzlebox",
+      "hash": "cb01089f7f2a4e84b36790efa99f3ed89ef08f5e",
+      "volume": 0.4,
+      "weight": 1
+    },
+    {
+      "name": "music/game/shores",
+      "hash": "974c6083c8de0de74185e966d664bf0a5841bc22",
+      "volume": 0.4,
+      "weight": 2
+    },
+    {
+      "name": "music/game/subwoofer_lullaby",
+      "hash": "0dbcd56e6d8a931818f0913a0e23f784106d4ad8",
+      "volume": 1,
+      "weight": 1
+    },
+    {
+      "name": "music/game/sweden",
+      "hash": "be9b14926936c4509f7fe5002cdfbba3b2752d82",
+      "volume": 1,
+      "weight": 1
+    },
+    {
+      "name": "music/game/watcher",
+      "hash": "4878a57f39655fedb891c16425e55a3cd91a2d70",
+      "volume": 0.4,
+      "weight": 1
+    },
+    {
+      "name": "music/game/wet_hands",
+      "hash": "e8a73969b515a15df138a4d55b07f4ff573db25f",
+      "volume": 1,
+      "weight": 1
+    },
+    {
+      "name": "music/game/yakusoku",
+      "hash": "e36444071568c3273ea00627ed5462275cd6828e",
+      "volume": 0.8,
+      "weight": 1
+    }
+  ],
+  "music.creative": [
+    {
+      "event": "music.game",
+      "weight": 1
+    },
+    {
+      "name": "music/game/creative/aria_math",
+      "hash": "2cc340b0663cc0b2c64e88e6daf0fc1a9b35fc2d",
+      "volume": 1,
+      "weight": 1
+    },
+    {
+      "name": "music/game/creative/biome_fest",
+      "hash": "741249a89e97577f7a5acf30ece523fde0042650",
+      "volume": 1,
+      "weight": 1
+    },
+    {
+      "name": "music/game/creative/blind_spots",
+      "hash": "37ca3a11409c7a70d81499cfd34c37b2b982239c",
+      "volume": 1,
+      "weight": 1
+    },
+    {
+      "name": "music/game/creative/dreiton",
+      "hash": "2382caaea57324875b9873cf1d93c5b3ad28f547",
+      "volume": 1,
+      "weight": 1
+    },
+    {
+      "name": "music/game/creative/haunt_muskie",
+      "hash": "0824e1e9c8faa785a8fe975421fae67c651b7333",
+      "volume": 1,
+      "weight": 1
+    },
+    {
+      "name": "music/game/creative/taswell",
+      "hash": "4b84efdf7e8a4e45279bfe841ac98ba46c4cc5e0",
+      "volume": 1,
+      "weight": 1
+    }
+  ]
+}
