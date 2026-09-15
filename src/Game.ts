@@ -1,9 +1,9 @@
-import { Howl } from "howler";
 import * as THREE from "three";
 import Stats from "three/examples/jsm/libs/stats.module";
 
 import { AdaptiveRenderDistance } from "./AdaptiveRenderDistance";
 import audioManager from "./audio/AudioManager";
+import { MusicManager } from "./audio/MusicManager";
 import { BlockID } from "./Block";
 import { getBlockDef } from "./Block/blocks";
 import {
@@ -16,6 +16,7 @@ import { Clouds } from "./Clouds";
 import { BlockBreaker } from "./gameplay/BlockBreaker";
 import { HandRenderer } from "./gameplay/HandRenderer";
 import { Hud } from "./gameplay/Hud";
+import { Particles } from "./gameplay/Particles";
 import { createUI } from "./GUI";
 import {
   loadRenderDistance,
@@ -61,8 +62,10 @@ export default class Game {
   private physics!: Physics;
   private breaker!: BlockBreaker;
   private hand!: HandRenderer;
+  private particles!: Particles;
   private hud = new Hud();
   private adaptive!: AdaptiveRenderDistance;
+  private music = new MusicManager();
   private clouds!: Clouds;
   /** Deferred right-click repeat, like vanilla's 4-tick place delay */
   private placeCooldown = 0;
@@ -126,7 +129,6 @@ export default class Game {
     this.initStats();
     this.initListeners();
     this.initPauseMenu();
-    this.initAudio();
     this.updateSeedLabel();
     this.draw();
   }
@@ -199,7 +201,7 @@ export default class Game {
   initPauseMenu() {
     const click = (id: string, handler: () => void) => {
       document.getElementById(id)?.addEventListener("click", () => {
-        audioManager.play("gui.button.press");
+        audioManager.play("ui.button.click");
         handler();
       });
     };
@@ -225,7 +227,7 @@ export default class Game {
         this.setRenderDistance(Number(slider.value))
       );
       slider.addEventListener("change", () =>
-        audioManager.play("gui.button.press")
+        audioManager.play("ui.button.click")
       );
     }
     this.setRenderDistance(this.adaptive.max);
@@ -288,6 +290,7 @@ export default class Game {
   private setPauseVisible(visible: boolean) {
     const pause = document.getElementById("pause");
     if (pause) pause.style.display = visible ? "flex" : "none";
+    this.music.setMuted(visible);
   }
 
   private updateSeedLabel() {
@@ -371,20 +374,14 @@ export default class Game {
     this.physics = new Physics(this.scene);
     this.hand = new HandRenderer(textures);
 
-    this.breaker = new BlockBreaker();
+    this.particles = new Particles(textures, this.world);
+    this.scene.add(this.particles.mesh);
+    this.breaker = new BlockBreaker(this.particles);
 
-    // Compile the hand program now rather than stalling the frame the first
-    // time a block is hit
+    // Compile the particle and hand programs now rather than stalling the
+    // frame the first time a block is hit
     this.renderer.compile(this.scene, this.player.camera);
     this.hand.precompile(this.renderer);
-  }
-
-  initAudio() {
-    const sound = new Howl({
-      src: ["audio/ambient.mp3"],
-      loop: true,
-    });
-    sound.play();
   }
 
   initListeners() {
@@ -500,6 +497,7 @@ export default class Game {
     );
     this.clouds.update(time, this.sky.timeOfDay, this.player.camera.position);
     this.renderer.setClearColor(this.fogColor);
+    this.particles.setLighting(this.sky.daylight, this.fogColor, start, end);
     this.hand.setLight(this.sky.daylight, this.skyVisibleAbovePlayer());
   }
 
@@ -528,6 +526,7 @@ export default class Game {
     });
 
     this.updateAtmosphere();
+    this.music.update(deltaTime);
     this.adaptive.update(
       deltaTime,
       this.world.initialLoadComplete && this.player.controls.isLocked
@@ -537,6 +536,7 @@ export default class Game {
       this.physics.update(deltaTime, this.player, this.world);
       this.updateInteraction(deltaTime);
       this.hand.update(deltaTime, this.player);
+      this.particles.update(deltaTime);
     }
     this.world.update(this.player);
     if (this.world.initialLoadComplete) {

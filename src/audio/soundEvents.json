@@ -1,0 +1,81 @@
+{
+  "block.grass.step": [
+    "step/grass1",
+    "step/grass2",
+    "step/grass3",
+    "step/grass4",
+    "step/grass5",
+    "step/grass6"
+  ],
+  "block.grass.break": ["dig/grass1", "dig/grass2", "dig/grass3", "dig/grass4"],
+  "block.grass.place": ["dig/grass1", "dig/grass2", "dig/grass3", "dig/grass4"],
+  "block.gravel.step": [
+    "step/gravel1",
+    "step/gravel2",
+    "step/gravel3",
+    "step/gravel4"
+  ],
+  "block.gravel.break": [
+    "dig/gravel1",
+    "dig/gravel2",
+    "dig/gravel3",
+    "dig/gravel4"
+  ],
+  "block.gravel.place": [
+    "dig/gravel1",
+    "dig/gravel2",
+    "dig/gravel3",
+    "dig/gravel4"
+  ],
+  "block.stone.step": [
+    "step/stone1",
+    "step/stone2",
+    "step/stone3",
+    "step/stone4",
+    "step/stone5",
+    "step/stone6"
+  ],
+  "block.stone.break": ["dig/stone1", "dig/stone2", "dig/stone3", "dig/stone4"],
+  "block.stone.place": ["dig/stone1", "dig/stone2", "dig/stone3", "dig/stone4"],
+  "block.wood.step": [
+    "step/wood1",
+    "step/wood2",
+    "step/wood3",
+    "step/wood4",
+    "step/wood5",
+    "step/wood6"
+  ],
+  "block.wood.break": ["dig/wood1", "dig/wood2", "dig/wood3", "dig/wood4"],
+  "block.wood.place": ["dig/wood1", "dig/wood2", "dig/wood3", "dig/wood4"],
+  "block.sand.step": [
+    "step/sand1",
+    "step/sand2",
+    "step/sand3",
+    "step/sand4",
+    "step/sand5"
+  ],
+  "block.sand.break": ["dig/sand1", "dig/sand2", "dig/sand3", "dig/sand4"],
+  "block.sand.place": ["dig/sand1", "dig/sand2", "dig/sand3", "dig/sand4"],
+  "block.snow.step": ["step/snow1", "step/snow2", "step/snow3", "step/snow4"],
+  "block.snow.break": ["dig/snow1", "dig/snow2", "dig/snow3", "dig/snow4"],
+  "block.snow.place": ["dig/snow1", "dig/snow2", "dig/snow3", "dig/snow4"],
+  "block.wool.step": [
+    "step/cloth1",
+    "step/cloth2",
+    "step/cloth3",
+    "step/cloth4"
+  ],
+  "block.wool.break": ["dig/cloth1", "dig/cloth2", "dig/cloth3", "dig/cloth4"],
+  "block.wool.place": ["dig/cloth1", "dig/cloth2", "dig/cloth3", "dig/cloth4"],
+  "block.glass.step": [
+    "step/stone1",
+    "step/stone2",
+    "step/stone3",
+    "step/stone4",
+    "step/stone5",
+    "step/stone6"
+  ],
+  "block.glass.break": ["random/glass1", "random/glass2", "random/glass3"],
+  "block.glass.place": ["dig/stone1", "dig/stone2", "dig/stone3", "dig/stone4"],
+  "ui.button.click": ["random/click_stereo"]
+}
