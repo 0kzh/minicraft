@@ -24,6 +24,11 @@ export enum Channel {
   Spaghetti2DElevation,
   CaveRoughness,
   Entrance,
+  SpaghettiRarity,
+  CaveLayer,
+  NoodleA,
+  NoodleB,
+  Noodle,
   Count,
 }
 

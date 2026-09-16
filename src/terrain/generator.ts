@@ -213,7 +213,7 @@ export function sampleColumn(
   out.surface = noise.noise2(Channel.Surface, wx / 14, wz / 14);
   out.caveElevation =
     SPAGHETTI_2D_MIN_Y +
-    (noise.noise2(Channel.Spaghetti2DElevation, wx / 160, wz / 160) + 1) *
+    (noise.noise2(Channel.Spaghetti2DElevation, wx / 256, wz / 256) + 1) *
       0.5 *
       (SPAGHETTI_2D_MAX_Y - SPAGHETTI_2D_MIN_Y);
   return out;
@@ -282,25 +282,50 @@ class Lattice {
 
 type Carver = {
   cheese: Lattice;
+  /** y-stretched noise whose square blocks cheese into horizontal layers */
+  caveLayer: Lattice;
   spaghettiA: Lattice;
   spaghettiB: Lattice;
   /** Slowly varying tunnel thickness so passages swell and pinch */
   thickness: Lattice;
-  /** Sheet noise for the wide horizontal 2D spaghetti passages */
+  /** Sheet noise for the tall 2D spaghetti passages */
   spaghetti2d: Lattice;
   /** Small-scale roughness that breaks up smooth cave walls */
   roughness: Lattice;
-  /** Funnel-shaped openings that link the surface to the tunnels */
+  /** Blob caves that open onto the surface */
   entrance: Lattice;
+  noodleA: Lattice;
+  noodleB: Lattice;
+  noodleGate: Lattice;
 };
 
+/**
+ * Vanilla `spaghetti_3d_rarity` tiers (`interval_select` in
+ * `overworld/caves/entrances`): (wavelength multiplier, value multiplier).
+ * Rarer regions have longer, sparser tunnels of the same width.
+ */
+const RARITY_TIERS: [number, number][] = [
+  [0.75, 0.75],
+  [1, 1],
+  [1.5, 1.5],
+  [2, 2],
+];
+
+/** cave_cheese amplitude modifiers for successive octaves */
+const CHEESE_AMPLITUDES = [0.5, 1, 2, 1, 2];
+const CHEESE_NORM = CHEESE_AMPLITUDES.reduce((a, b) => a + b, 0) * 0.6;
+
 /** Band of heights the 2D spaghetti passages wander through */
-const SPAGHETTI_2D_MIN_Y = 14;
-const SPAGHETTI_2D_MAX_Y = 58;
-/** Half-height of a 2D spaghetti passage */
-const SPAGHETTI_2D_HALF_HEIGHT = 5;
-/** Depth below the surface over which a cave entrance funnel narrows */
-const ENTRANCE_DEPTH = 26;
+const SPAGHETTI_2D_MIN_Y = 12;
+const SPAGHETTI_2D_MAX_Y = 56;
+/** Blocks below the surface where only entrances and tunnels may carve */
+const SURFACE_SHELL = 10;
+/** Extra density a cave must reach to open the surface, tapering over MOUTH_DEPTH */
+const MOUTH_MARGIN = 0.03;
+const MOUTH_DEPTH = 4;
+/** Entrance blobs fade out below this height (vanilla gradient -10..30) */
+const ENTRANCE_FADE_TOP = 44;
+const ENTRANCE_FADE_BOTTOM = 18;
 /** Ravine profile: depth below the rim and half-width in path-noise units */
 const RAVINE_DEPTH = 52;
 const RAVINE_WIDTH_TOP = 0.05;
@@ -316,6 +341,13 @@ const COAST_REACH = PAD - 1;
 /**
  * Whether the cell at world (wx, y, wz) in a column of the given height is
  * hollowed out by a cave or ravine.
+ *
+ * Mirrors the structure of vanilla's `overworld/final_density`: a thin shell
+ * under the surface is only reached by `entrances` (blob caves and the 3D
+ * spaghetti tunnels), while deeper rock is additionally hollowed by cheese
+ * caverns, 2D spaghetti passages and noodles. Every term is a "density":
+ * negative means air, and `spaghetti_roughness_function` is added to the
+ * tunnel families so their walls are never smooth iso-surfaces.
  */
 function isCarved(
   noise: WorldNoise,
@@ -332,61 +364,40 @@ function isCarved(
   const submerged = col.height < sea;
   if (submerged && y > col.height - SEA_FLOOR_SEAL) return false;
   const inland = !submerged && col.height > sea + COAST_BAND;
-
-  // Roughness in [-1, 1] nudges every threshold so walls are never smooth
-  const rough = carver.roughness.get(wx, y, wz);
   const depthBelow = col.height - y;
+  // Openings need a margin of density right at the surface so a cave only
+  // breaks through where its body is wide, never as a shallow scratch
+  const mouth = MOUTH_MARGIN * clamp(1 - depthBelow / MOUTH_DEPTH, 0, 1);
 
-  // Cheese: big caverns whose threshold rises towards the surface so they
-  // seldom breach it, and drops with depth into open cavern systems
-  const cheese = carver.cheese.get(wx, y, wz);
-  const surfaceFade = clamp((depthBelow - 6) / 40, 0, 1);
-  const deepBonus = clamp((40 - y) / 40, 0, 1);
-  const cheeseCut =
-    cv.cheeseThreshold +
-    0.3 * (1 - surfaceFade) -
-    0.08 * deepBonus +
-    0.04 * rough;
-  if (cheese > cheeseCut) return true;
+  // spaghetti_roughness_function = (-0.05 - 0.05 * mod) * (|rough| - 0.4)
+  const rough = carver.roughness.get(wx, y, wz);
+  const roughness =
+    (-0.05 - 0.05 * noise.noise2(Channel.CaveRoughness, wx / 256, wz / 256)) *
+    (Math.abs(rough) - 0.4);
 
-  // Thickness modulator shared by both spaghetti families: passages swell
-  // to ~2.5x their base radius and pinch to ~0.6x along their length
-  const thick = (carver.thickness.get(wx, y, wz) + 1) * 0.5;
-  const swell = 0.6 + 1.9 * thick * thick;
-
-  // 3D spaghetti: tunnels along the intersection of two noise iso-surfaces
-  // using the Chebyshev distance like vanilla, which gives squarer, roomier
-  // cross-sections than a circle of the same radius
+  // 3D spaghetti: max(|a|, |b|) - thickness, thickness in [0.065, 0.088]
+  // (`spaghetti_3d_thickness`), scaled by the user radius
+  const thick = carver.thickness.get(wx, y, wz);
   const a = Math.abs(carver.spaghettiA.get(wx, y, wz));
   const b = Math.abs(carver.spaghettiB.get(wx, y, wz));
-  // Pinch tunnels that run right under the surface so the ground is not
-  // riddled with pits; entrances provide the intended way in
-  const skinFade = 0.45 + 0.55 * clamp(depthBelow / 10, 0, 1);
-  const radius = cv.spaghettiRadius * swell * skinFade * (1 + 0.15 * rough);
-  if (Math.max(a, b) < radius) return true;
+  const spaghetti3d =
+    Math.max(a, b) -
+    (0.0765 + 0.0115 * thick) * (cv.spaghettiRadius / 0.0765) +
+    roughness;
+  if (spaghetti3d < -mouth) return true;
 
-  // 2D spaghetti: wide, winding horizontal passages that follow a slowly
-  // varying elevation, the vanilla source of long walkable corridors
-  const dy = Math.abs(y - col.caveElevation);
-  if (
-    dy < SPAGHETTI_2D_HALF_HEIGHT * (0.6 + 0.8 * thick) &&
-    y < col.height - 4
-  ) {
-    const sheet = Math.abs(carver.spaghetti2d.get(wx, y, wz));
-    const vertical = dy / (SPAGHETTI_2D_HALF_HEIGHT * (0.6 + 0.8 * thick));
-    const sheetRadius = 0.13 * swell * (1 + 0.12 * rough);
-    if (Math.max(sheet / sheetRadius, vertical) < 1) return true;
-  }
-
-  // Entrances: funnels that are wide at the surface and narrow as they
-  // descend to meet the tunnels, only on dry land away from the coast
-  if (cv.entrances && inland && depthBelow <= ENTRANCE_DEPTH) {
-    const e = carver.entrance.get(wx, y, wz);
-    const t = depthBelow / ENTRANCE_DEPTH;
-    // Regional gate so entrances cluster into cave-riddled areas
-    const gate = noise.noise2(Channel.Entrance, wx / 420 + 77, wz / 420);
-    const cut = 0.72 + 0.26 * t * t + 0.05 * rough + 0.14 * (0.5 - gate);
-    if (e > cut) return true;
+  // Entrances: cave_entrance + 0.37 + gradient. Blobs that are full size
+  // right at the surface so they read as cave mouths, not pits, and fade
+  // out below ENTRANCE_FADE_TOP so they hand over to the deep systems
+  if (cv.entrances && inland) {
+    const fade = clamp(
+      (ENTRANCE_FADE_TOP - y) / (ENTRANCE_FADE_TOP - ENTRANCE_FADE_BOTTOM),
+      0,
+      1
+    );
+    const entrance =
+      carver.entrance.get(wx, y, wz) + cv.entranceThreshold + 0.3 * fade;
+    if (entrance < -2 * mouth) return true;
   }
 
   // Ravines: canyons open to the sky, widest at the rim with rugged walls
@@ -403,7 +414,7 @@ function isCarved(
         // Bulge along the length so the canyon opens into wider chambers,
         // and taper to nothing at the edge of the gated region
         const bulge =
-          (0.75 + 0.5 * thick + 0.12 * rough) * smoothstep(0.5, 0.62, gate);
+          (1 + 0.25 * thick + 0.12 * rough) * smoothstep(0.5, 0.62, gate);
         const width =
           (RAVINE_WIDTH_BOTTOM +
             (RAVINE_WIDTH_TOP - RAVINE_WIDTH_BOTTOM) * Math.sqrt(depth)) *
@@ -411,6 +422,38 @@ function isCarved(
         if (r < width) return true;
       }
     }
+  }
+
+  // Everything below only exists under the surface shell
+  if (depthBelow < SURFACE_SHELL) return false;
+
+  // Cheese: cave_cheese + 0.27 + 4 * cave_layer^2 + near-surface penalty,
+  // air where negative. `cheeseThreshold` replaces vanilla's 0.27 offset.
+  const layer = carver.caveLayer.get(wx, y, wz);
+  const shellFade = clamp((depthBelow - SURFACE_SHELL) / 24, 0, 1);
+  const cheese =
+    carver.cheese.get(wx, y, wz) +
+    cv.cheeseThreshold +
+    4 * layer * layer +
+    0.5 * (1 - shellFade);
+  if (cheese < 0) return true;
+
+  // 2D spaghetti: a sheet of noise clipped to a slab around the column's
+  // preferred elevation. thickness2d in [-1.3, -0.6] (units of 8 blocks)
+  // sets both the slab half-height and the sheet thickness, like vanilla.
+  const thickness2d = -0.95 - 0.35 * thick;
+  const sheet = Math.abs(carver.spaghetti2d.get(wx, y, wz));
+  const slab = Math.abs(y - col.caveElevation) / 8 + thickness2d;
+  const spaghetti2d =
+    Math.max(sheet + 0.083 * thickness2d, slab * slab * slab) + roughness;
+  if (spaghetti2d < 0) return true;
+
+  // Noodles: thin winding tunnels that stitch the systems together
+  if (carver.noodleGate.get(wx, y, wz) < 0) {
+    const na = Math.abs(carver.noodleA.get(wx, y, wz));
+    const nb = Math.abs(carver.noodleB.get(wx, y, wz));
+    const noodle = 1.5 * Math.max(na, nb) - 0.075 - 0.025 * thick;
+    if (noodle < 0) return true;
   }
   return false;
 }
@@ -469,43 +512,69 @@ export function generateChunkData(
   let carver: Carver | null = null;
   if (params.caves.enabled) {
     const cv = params.caves;
+    const rarity = (wx: number, wz: number) =>
+      (noise.noise2(Channel.SpaghettiRarity, wx / 1024, wz / 1024) + 1) * 0.5;
+    const tier = (r: number) => {
+      const f = clamp(r, 0, 0.999) * (RARITY_TIERS.length - 1);
+      const i = Math.floor(f);
+      const t = f - i;
+      return [
+        lerp(RARITY_TIERS[i][0], RARITY_TIERS[i + 1][0], t),
+        lerp(RARITY_TIERS[i][1], RARITY_TIERS[i + 1][1], t),
+      ];
+    };
+    const spaghetti = (ch: Channel) => (x: number, y: number, z: number) => {
+      const [wave, mul] = tier(rarity(x, z));
+      const s = cv.spaghettiScale * wave;
+      return noise.noise3(ch, x / s, y / s, z / s) * mul;
+    };
+    // cave_cheese: octaves at 1, 1/2, 1/4, 1/8, 1/16 of the wavelength with
+    // vanilla's amplitude modifiers [0.5, 1, 2, 1, 2]
+    const cheese = (x: number, y: number, z: number) => {
+      let sum = 0;
+      let freq = 1 / cv.cheeseScale;
+      for (let i = 0; i < CHEESE_AMPLITUDES.length; i++) {
+        sum +=
+          CHEESE_AMPLITUDES[i] *
+          noise.noise3(Channel.Cheese, x * freq, y * freq * 1.5, z * freq);
+        freq *= 2;
+      }
+      return sum / CHEESE_NORM;
+    };
+    // cave_entrance: octaves 1, 1/2, 1/4 with modifiers [0.4, 0.5, 1],
+    // xz_scale 0.75 and y_scale 0.5 so the blobs are tall
+    const entrance = (x: number, y: number, z: number) =>
+      (0.4 * noise.noise3(Channel.Entrance, x / 170, y / 256, z / 170) +
+        0.5 * noise.noise3(Channel.Entrance, x / 85, y / 128, z / 85) +
+        noise.noise3(Channel.Entrance, x / 42.5, y / 64, z / 42.5)) /
+      1.9;
+    const lattice = (sample: (x: number, y: number, z: number) => number) =>
+      new Lattice(originX, originZ, w, size.height, sample);
     carver = {
-      cheese: new Lattice(originX, originZ, w, size.height, (x, y, z) =>
-        noise.fbm3(
-          Channel.Cheese,
-          x / cv.cheeseScale,
-          y / (cv.cheeseScale * 0.55),
-          z / cv.cheeseScale,
-          2
-        )
+      cheese: lattice(cheese),
+      caveLayer: lattice((x, y, z) =>
+        noise.noise3(Channel.CaveLayer, x / 256, y / 32, z / 256)
       ),
-      spaghettiA: new Lattice(originX, originZ, w, size.height, (x, y, z) =>
-        noise.noise3(
-          Channel.SpaghettiA,
-          x / cv.spaghettiScale,
-          y / (cv.spaghettiScale * 0.7),
-          z / cv.spaghettiScale
-        )
+      spaghettiA: lattice(spaghetti(Channel.SpaghettiA)),
+      spaghettiB: lattice(spaghetti(Channel.SpaghettiB)),
+      thickness: lattice((x, y, z) =>
+        noise.noise3(Channel.SpaghettiThickness, x / 256, y / 256, z / 256)
       ),
-      spaghettiB: new Lattice(originX, originZ, w, size.height, (x, y, z) =>
-        noise.noise3(
-          Channel.SpaghettiB,
-          x / cv.spaghettiScale,
-          y / (cv.spaghettiScale * 0.7),
-          z / cv.spaghettiScale
-        )
+      spaghetti2d: lattice((x, y, z) =>
+        noise.noise3(Channel.Spaghetti2D, x / 128, y / 128, z / 128)
       ),
-      thickness: new Lattice(originX, originZ, w, size.height, (x, y, z) =>
-        noise.noise3(Channel.SpaghettiThickness, x / 110, y / 70, z / 110)
+      roughness: lattice((x, y, z) =>
+        noise.noise3(Channel.CaveRoughness, x / 32, y / 32, z / 32)
       ),
-      spaghetti2d: new Lattice(originX, originZ, w, size.height, (x, y, z) =>
-        noise.noise3(Channel.Spaghetti2D, x / 72, y / 36, z / 72)
+      entrance: lattice(entrance),
+      noodleA: lattice((x, y, z) =>
+        noise.noise3(Channel.NoodleA, x / 48, y / 48, z / 48)
       ),
-      roughness: new Lattice(originX, originZ, w, size.height, (x, y, z) =>
-        noise.noise3(Channel.CaveRoughness, x / 11, y / 11, z / 11)
+      noodleB: lattice((x, y, z) =>
+        noise.noise3(Channel.NoodleB, x / 48, y / 48, z / 48)
       ),
-      entrance: new Lattice(originX, originZ, w, size.height, (x, y, z) =>
-        noise.noise3(Channel.Entrance, x / 44, y / 30, z / 44)
+      noodleGate: lattice((x, y, z) =>
+        noise.noise3(Channel.Noodle, x / 128, y / 128, z / 128)
       ),
     };
     carveCaves(

@@ -29,6 +29,8 @@ export type WorldParams = {
     spaghettiScale: number;
     /** Tunnel radius in noise space */
     spaghettiRadius: number;
+    /** Offset added to the entrance noise; higher opens more cave mouths */
+    entranceThreshold: number;
     /** Carved cells at or below this height fill with lava */
     lavaLevel: number;
     ravines: boolean;

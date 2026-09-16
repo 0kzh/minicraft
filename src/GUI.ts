@@ -67,14 +67,15 @@ export function createUI(
   cavesFolder.add(caves, "enabled").name("Enabled");
   cavesFolder.add(caves, "ravines").name("Ravines");
   cavesFolder.add(caves, "entrances").name("Entrances");
-  cavesFolder.add(caves, "cheeseScale", 16, 128, 1).name("Cavern Scale");
-  cavesFolder
-    .add(caves, "cheeseThreshold", 0.2, 0.9, 0.01)
-    .name("Cavern Threshold");
-  cavesFolder.add(caves, "spaghettiScale", 8, 96, 1).name("Tunnel Scale");
+  cavesFolder.add(caves, "cheeseScale", 32, 512, 1).name("Cavern Scale");
+  cavesFolder.add(caves, "cheeseThreshold", 0, 0.9, 0.01).name("Cavern Rarity");
+  cavesFolder.add(caves, "spaghettiScale", 16, 256, 1).name("Tunnel Scale");
   cavesFolder
     .add(caves, "spaghettiRadius", 0.02, 0.2, 0.005)
     .name("Tunnel Radius");
+  cavesFolder
+    .add(caves, "entranceThreshold", 0, 0.8, 0.01)
+    .name("Entrance Threshold");
   cavesFolder.add(caves, "lavaLevel", 0, 40, 1).name("Lava Level");
 
   const decorFolder = terrainFolder.addFolder("Decoration");
