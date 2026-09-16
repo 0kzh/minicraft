@@ -32,6 +32,7 @@ export type WorldParams = {
     /** Carved cells at or below this height fill with lava */
     lavaLevel: number;
     ravines: boolean;
+    entrances: boolean;
   };
   /** Multipliers on the per-biome defaults */
   trees: {

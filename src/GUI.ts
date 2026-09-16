@@ -66,6 +66,7 @@ export function createUI(
   const caves = world.params.caves;
   cavesFolder.add(caves, "enabled").name("Enabled");
   cavesFolder.add(caves, "ravines").name("Ravines");
+  cavesFolder.add(caves, "entrances").name("Entrances");
   cavesFolder.add(caves, "cheeseScale", 16, 128, 1).name("Cavern Scale");
   cavesFolder
     .add(caves, "cheeseThreshold", 0.2, 0.9, 0.01)

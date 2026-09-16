@@ -56,6 +56,8 @@ export type Column = {
   humidity: number;
   /** Small-scale noise used to vary surface layers */
   surface: number;
+  /** Preferred y of the wide horizontal cave passages under this column */
+  caveElevation: number;
 };
 
 const newColumn = (): Column => ({
@@ -66,6 +68,7 @@ const newColumn = (): Column => ({
   temperature: 0,
   humidity: 0,
   surface: 0,
+  caveElevation: 0,
 });
 
 /**
@@ -208,6 +211,11 @@ export function sampleColumn(
   out.temperature = temperature;
   out.humidity = humidity;
   out.surface = noise.noise2(Channel.Surface, wx / 14, wz / 14);
+  out.caveElevation =
+    SPAGHETTI_2D_MIN_Y +
+    (noise.noise2(Channel.Spaghetti2DElevation, wx / 160, wz / 160) + 1) *
+      0.5 *
+      (SPAGHETTI_2D_MAX_Y - SPAGHETTI_2D_MIN_Y);
   return out;
 }
 
@@ -276,7 +284,27 @@ type Carver = {
   cheese: Lattice;
   spaghettiA: Lattice;
   spaghettiB: Lattice;
+  /** Slowly varying tunnel thickness so passages swell and pinch */
+  thickness: Lattice;
+  /** Sheet noise for the wide horizontal 2D spaghetti passages */
+  spaghetti2d: Lattice;
+  /** Small-scale roughness that breaks up smooth cave walls */
+  roughness: Lattice;
+  /** Funnel-shaped openings that link the surface to the tunnels */
+  entrance: Lattice;
 };
+
+/** Band of heights the 2D spaghetti passages wander through */
+const SPAGHETTI_2D_MIN_Y = 14;
+const SPAGHETTI_2D_MAX_Y = 58;
+/** Half-height of a 2D spaghetti passage */
+const SPAGHETTI_2D_HALF_HEIGHT = 5;
+/** Depth below the surface over which a cave entrance funnel narrows */
+const ENTRANCE_DEPTH = 26;
+/** Ravine profile: depth below the rim and half-width in path-noise units */
+const RAVINE_DEPTH = 52;
+const RAVINE_WIDTH_TOP = 0.05;
+const RAVINE_WIDTH_BOTTOM = 0.012;
 
 /** Cells this close to a submerged floor are never carved, keeping seas sealed */
 const SEA_FLOOR_SEAL = 4;
@@ -303,27 +331,83 @@ function isCarved(
   if (y < 4 || y > col.height) return false;
   const submerged = col.height < sea;
   if (submerged && y > col.height - SEA_FLOOR_SEAL) return false;
+  const inland = !submerged && col.height > sea + COAST_BAND;
 
-  // Large caverns, rarer near the surface
+  // Roughness in [-1, 1] nudges every threshold so walls are never smooth
+  const rough = carver.roughness.get(wx, y, wz);
+  const depthBelow = col.height - y;
+
+  // Cheese: big caverns whose threshold rises towards the surface so they
+  // seldom breach it, and drops with depth into open cavern systems
   const cheese = carver.cheese.get(wx, y, wz);
-  const surfaceFade = clamp((y - 30) / 60, 0, 1);
-  if (cheese > cv.cheeseThreshold + 0.22 * surfaceFade) return true;
+  const surfaceFade = clamp((depthBelow - 6) / 40, 0, 1);
+  const deepBonus = clamp((40 - y) / 40, 0, 1);
+  const cheeseCut =
+    cv.cheeseThreshold +
+    0.3 * (1 - surfaceFade) -
+    0.08 * deepBonus +
+    0.04 * rough;
+  if (cheese > cheeseCut) return true;
 
-  // Tunnels along the intersection of two noise iso-surfaces
-  const a = carver.spaghettiA.get(wx, y, wz);
-  const b = carver.spaghettiB.get(wx, y, wz);
-  const radius = cv.spaghettiRadius * (0.7 + 0.6 * (cheese + 1) * 0.5);
-  if (a * a + b * b < radius * radius) return true;
+  // Thickness modulator shared by both spaghetti families: passages swell
+  // to ~2.5x their base radius and pinch to ~0.6x along their length
+  const thick = (carver.thickness.get(wx, y, wz) + 1) * 0.5;
+  const swell = 0.6 + 1.9 * thick * thick;
 
-  // Ravines: deep narrow canyons open to the sky
-  if (cv.ravines && !submerged && col.height > sea + COAST_BAND) {
+  // 3D spaghetti: tunnels along the intersection of two noise iso-surfaces
+  // using the Chebyshev distance like vanilla, which gives squarer, roomier
+  // cross-sections than a circle of the same radius
+  const a = Math.abs(carver.spaghettiA.get(wx, y, wz));
+  const b = Math.abs(carver.spaghettiB.get(wx, y, wz));
+  // Pinch tunnels that run right under the surface so the ground is not
+  // riddled with pits; entrances provide the intended way in
+  const skinFade = 0.45 + 0.55 * clamp(depthBelow / 10, 0, 1);
+  const radius = cv.spaghettiRadius * swell * skinFade * (1 + 0.15 * rough);
+  if (Math.max(a, b) < radius) return true;
+
+  // 2D spaghetti: wide, winding horizontal passages that follow a slowly
+  // varying elevation, the vanilla source of long walkable corridors
+  const dy = Math.abs(y - col.caveElevation);
+  if (
+    dy < SPAGHETTI_2D_HALF_HEIGHT * (0.6 + 0.8 * thick) &&
+    y < col.height - 4
+  ) {
+    const sheet = Math.abs(carver.spaghetti2d.get(wx, y, wz));
+    const vertical = dy / (SPAGHETTI_2D_HALF_HEIGHT * (0.6 + 0.8 * thick));
+    const sheetRadius = 0.13 * swell * (1 + 0.12 * rough);
+    if (Math.max(sheet / sheetRadius, vertical) < 1) return true;
+  }
+
+  // Entrances: funnels that are wide at the surface and narrow as they
+  // descend to meet the tunnels, only on dry land away from the coast
+  if (cv.entrances && inland && depthBelow <= ENTRANCE_DEPTH) {
+    const e = carver.entrance.get(wx, y, wz);
+    const t = depthBelow / ENTRANCE_DEPTH;
+    // Regional gate so entrances cluster into cave-riddled areas
+    const gate = noise.noise2(Channel.Entrance, wx / 420 + 77, wz / 420);
+    const cut = 0.72 + 0.26 * t * t + 0.05 * rough + 0.14 * (0.5 - gate);
+    if (e > cut) return true;
+  }
+
+  // Ravines: canyons open to the sky, widest at the rim with rugged walls
+  if (cv.ravines && inland) {
     const gate = noise.noise2(Channel.Ravine, wx / 900 + 50, wz / 900);
-    if (gate > 0.32) {
-      const bottom = Math.max(12, col.height - 42);
+    if (gate > 0.5) {
+      const bottom = Math.max(
+        cv.lavaLevel + 1,
+        col.height - RAVINE_DEPTH + 6 * rough
+      );
       if (y >= bottom) {
         const r = Math.abs(noise.fbm2(Channel.Ravine, wx / 260, wz / 260, 2));
         const depth = (y - bottom) / Math.max(1, col.height - bottom);
-        const width = 0.006 + 0.016 * depth;
+        // Bulge along the length so the canyon opens into wider chambers,
+        // and taper to nothing at the edge of the gated region
+        const bulge =
+          (0.75 + 0.5 * thick + 0.12 * rough) * smoothstep(0.5, 0.62, gate);
+        const width =
+          (RAVINE_WIDTH_BOTTOM +
+            (RAVINE_WIDTH_TOP - RAVINE_WIDTH_BOTTOM) * Math.sqrt(depth)) *
+          bulge;
         if (r < width) return true;
       }
     }
@@ -410,6 +494,18 @@ export function generateChunkData(
           y / (cv.spaghettiScale * 0.7),
           z / cv.spaghettiScale
         )
+      ),
+      thickness: new Lattice(originX, originZ, w, size.height, (x, y, z) =>
+        noise.noise3(Channel.SpaghettiThickness, x / 110, y / 70, z / 110)
+      ),
+      spaghetti2d: new Lattice(originX, originZ, w, size.height, (x, y, z) =>
+        noise.noise3(Channel.Spaghetti2D, x / 72, y / 36, z / 72)
+      ),
+      roughness: new Lattice(originX, originZ, w, size.height, (x, y, z) =>
+        noise.noise3(Channel.CaveRoughness, x / 11, y / 11, z / 11)
+      ),
+      entrance: new Lattice(originX, originZ, w, size.height, (x, y, z) =>
+        noise.noise3(Channel.Entrance, x / 44, y / 30, z / 44)
       ),
     };
     carveCaves(
