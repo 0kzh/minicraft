@@ -22,6 +22,8 @@ export enum Channel {
   SpaghettiThickness,
   Spaghetti2D,
   Spaghetti2DElevation,
+  Spaghetti2DModulator,
+  CaveRegion,
   CaveRoughness,
   Entrance,
   SpaghettiRarity,

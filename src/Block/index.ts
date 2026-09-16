@@ -42,20 +42,114 @@ export enum BlockID {
 export const FLUID_FALLING = 8;
 export const FLUID_MAX_LEVEL = 7;
 
-/**
- * Ore veins per chunk: vein attempts, blob size and inclusive y range.
- * The world is 128 tall with bedrock at y=0, so the vanilla 1.18+ Java bands
- * (which span y=-64..320) are compressed rather than copied: vanilla puts
- * diamond deepest (peak at -64, none above 16), gold below 32 (peak -16),
- * iron peaking at 16 and coal throughout the upper world (peak 96). Vein
- * sizes follow vanilla's 17/9/9/4 order of magnitude.
- */
-export const oreConfig = {
-  coal: { id: BlockID.CoalOre, attempts: 12, size: 12, minY: 5, maxY: 120 },
-  iron: { id: BlockID.IronOre, attempts: 10, size: 7, minY: 2, maxY: 64 },
-  gold: { id: BlockID.GoldOre, attempts: 2, size: 6, minY: 2, maxY: 32 },
-  diamond: { id: BlockID.DiamondOre, attempts: 1, size: 5, minY: 1, maxY: 16 },
+export type OreHeight = {
+  /** `uniform` picks any y in range; `trapezoid` peaks at the middle */
+  kind: "uniform" | "trapezoid";
+  min: number;
+  max: number;
 };
+
+export type OreFeature = {
+  id: BlockID;
+  /** Veins per chunk; a fraction is a per-chunk chance (vanilla `rarity_filter`) */
+  count: number;
+  /** Vein size, as in vanilla's `ore` configured feature */
+  size: number;
+  /** `discard_chance_on_air_exposure`: chance to skip an ore touching air */
+  discard: number;
+  height: OreHeight;
+};
+
+/**
+ * Vanilla 1.18+ overworld ore placed features (`ore_coal_upper`,
+ * `ore_coal_lower`, `ore_iron_upper/middle/small`, `ore_gold`,
+ * `ore_diamond`, `ore_diamond_large/buried/medium`) mapped onto this 128
+ * tall world: vanilla y -64..63 is compressed 2:1 onto 0..62 and 63..320 is
+ * compressed 4:1 onto 62..126, and each count is scaled by the same factor
+ * as its height band so the density of veins per stone block matches.
+ */
+export const oreFeatures: OreFeature[] = [
+  // ore_coal_upper: 30 x ore_coal, uniform 136..top
+  {
+    id: BlockID.CoalOre,
+    count: 8,
+    size: 17,
+    discard: 0,
+    height: { kind: "uniform", min: 80, max: 126 },
+  },
+  // ore_coal_lower: 20 x ore_coal_buried, trapezoid 0..192
+  {
+    id: BlockID.CoalOre,
+    count: 7,
+    size: 17,
+    discard: 0.5,
+    height: { kind: "trapezoid", min: 31, max: 94 },
+  },
+  // ore_iron_upper: 90 x ore_iron, trapezoid 80..384
+  {
+    id: BlockID.IronOre,
+    count: 22,
+    size: 9,
+    discard: 0,
+    height: { kind: "trapezoid", min: 66, max: 142 },
+  },
+  // ore_iron_middle: 10 x ore_iron, trapezoid -24..56
+  {
+    id: BlockID.IronOre,
+    count: 5,
+    size: 9,
+    discard: 0,
+    height: { kind: "trapezoid", min: 18, max: 58 },
+  },
+  // ore_iron_small: 10 x ore_iron_small, uniform bottom..72
+  {
+    id: BlockID.IronOre,
+    count: 5,
+    size: 4,
+    discard: 0,
+    height: { kind: "uniform", min: 1, max: 64 },
+  },
+  // ore_gold: 4 x ore_gold_buried, trapezoid -64..32
+  {
+    id: BlockID.GoldOre,
+    count: 2,
+    size: 9,
+    discard: 0.5,
+    height: { kind: "trapezoid", min: 0, max: 46 },
+  },
+  // ore_diamond: 7 x ore_diamond_small, trapezoid bottom-80..bottom+80
+  {
+    id: BlockID.DiamondOre,
+    count: 4,
+    size: 4,
+    discard: 0.5,
+    height: { kind: "trapezoid", min: -41, max: 38 },
+  },
+  // ore_diamond_large: 1/9 chance x ore_diamond_large
+  {
+    id: BlockID.DiamondOre,
+    count: 0.06,
+    size: 12,
+    discard: 0.7,
+    height: { kind: "trapezoid", min: -41, max: 38 },
+  },
+  // ore_diamond_buried: 4 x ore_diamond_buried
+  {
+    id: BlockID.DiamondOre,
+    count: 2,
+    size: 8,
+    discard: 1,
+    height: { kind: "trapezoid", min: -41, max: 38 },
+  },
+  // ore_diamond_medium: 2 x ore_diamond_medium, uniform -64..-4
+  {
+    id: BlockID.DiamondOre,
+    count: 1,
+    size: 8,
+    discard: 0.5,
+    height: { kind: "uniform", min: 1, max: 28 },
+  },
+];
 
 export const blockIdToKey = {
   [BlockID.Air]: "air",

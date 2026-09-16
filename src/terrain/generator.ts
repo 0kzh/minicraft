@@ -1,4 +1,4 @@
-import { BlockID, oreConfig } from "../Block";
+import { BlockID, OreHeight, oreFeatures } from "../Block";
 import { getBlockDef } from "../Block/blocks";
 import { blockIndex, ChunkSize, createChunkData } from "../chunk/ChunkData";
 import { RNG } from "../RNG";
@@ -58,6 +58,8 @@ export type Column = {
   surface: number;
   /** Preferred y of the wide horizontal cave passages under this column */
   caveElevation: number;
+  /** 0..1, how much the large cave families (caverns, passages) may carve */
+  caveRegion: number;
 };
 
 const newColumn = (): Column => ({
@@ -69,6 +71,7 @@ const newColumn = (): Column => ({
   humidity: 0,
   surface: 0,
   caveElevation: 0,
+  caveRegion: 0,
 });
 
 /**
@@ -216,6 +219,15 @@ export function sampleColumn(
     (noise.noise2(Channel.Spaghetti2DElevation, wx / 256, wz / 256) + 1) *
       0.5 *
       (SPAGHETTI_2D_MAX_Y - SPAGHETTI_2D_MIN_Y);
+  out.caveRegion = smoothstep(
+    CAVE_REGION_EDGE,
+    CAVE_REGION_CORE,
+    noise.noise2(
+      Channel.CaveRegion,
+      wx / CAVE_REGION_SCALE,
+      wz / CAVE_REGION_SCALE
+    )
+  );
   return out;
 }
 
@@ -282,8 +294,6 @@ class Lattice {
 
 type Carver = {
   cheese: Lattice;
-  /** y-stretched noise whose square blocks cheese into horizontal layers */
-  caveLayer: Lattice;
   spaghettiA: Lattice;
   spaghettiB: Lattice;
   /** Slowly varying tunnel thickness so passages swell and pinch */
@@ -299,21 +309,76 @@ type Carver = {
   noodleGate: Lattice;
 };
 
+/** Measured standard deviation of a single `noise3` octave */
+const NOISE_SD = 0.427;
 /**
- * Vanilla `spaghetti_3d_rarity` tiers (`interval_select` in
- * `overworld/caves/entrances`): (wavelength multiplier, value multiplier).
- * Rarer regions have longer, sparser tunnels of the same width.
+ * Vanilla `NormalNoise` scales each of its two octave sums to an expected
+ * deviation of 1/6 (`valueFactor = 0.1666 / expectedDeviation`), so every
+ * cave noise has a deviation of about 0.24 regardless of octave count. The
+ * carver noises are rescaled to that so vanilla's thresholds keep their
+ * meaning.
  */
-const RARITY_TIERS: [number, number][] = [
-  [0.75, 0.75],
-  [1, 1],
-  [1.5, 1.5],
-  [2, 2],
-];
+const VANILLA_SD = 0.24;
+
+/**
+ * Vanilla `PerlinNoise` octave sum: amplitude i is weighted by
+ * 2^(n-1-i) / (2^n - 1) at twice the previous frequency, then rescaled to
+ * VANILLA_SD like `NormalNoise`.
+ */
+function normalNoise(
+  noise: WorldNoise,
+  ch: Channel,
+  amplitudes: number[],
+  x: number,
+  y: number,
+  z: number
+): number {
+  const n = amplitudes.length;
+  let sum = 0;
+  let variance = 0;
+  let freq = 1;
+  for (let i = 0; i < n; i++) {
+    const w = (amplitudes[i] * 2 ** (n - 1 - i)) / (2 ** n - 1);
+    sum += w * noise.noise3(ch, x * freq, y * freq, z * freq);
+    variance += w * w;
+    freq *= 2;
+  }
+  return (sum * VANILLA_SD) / (NOISE_SD * Math.sqrt(variance));
+}
+
+/**
+ * `weird_scaled_sampler` rarity mappers: rarer regions sample the tunnel
+ * noise at a longer wavelength and scale the value up by the same factor,
+ * so tunnels keep their width but there are fewer of them.
+ */
+const rarityType1 = (v: number) =>
+  v < -0.5 ? 0.75 : v < 0 ? 1 : v < 0.4 ? 1.5 : 2;
+const rarityType2 = (v: number) =>
+  v < -0.75 ? 0.5 : v < -0.5 ? 0.75 : v < 0.5 ? 1 : v < 0.75 ? 2 : 3;
+
+/**
+ * Added to the spaghetti_3d_rarity field before the tier lookup: pushes
+ * regions toward the sparse tiers so there are fewer tunnels of the same
+ * size (0 is vanilla).
+ */
+const SPAGHETTI_RARITY_BIAS = 0.25;
 
 /** cave_cheese amplitude modifiers for successive octaves */
 const CHEESE_AMPLITUDES = [0.5, 1, 2, 1, 2];
-const CHEESE_NORM = CHEESE_AMPLITUDES.reduce((a, b) => a + b, 0) * 0.6;
+/** cave_entrance amplitude modifiers */
+const ENTRANCE_AMPLITUDES = [0.4, 0.5, 1];
+
+/**
+ * Large cave systems (cheese caverns and 2D passages) only form in cave
+ * regions: a slow 2D field, fully open above CAVE_REGION_CORE and closed
+ * below CAVE_REGION_EDGE. Elsewhere the rock only has tunnels and noodles,
+ * so most caves are small and a few areas hold the big systems.
+ */
+const CAVE_REGION_SCALE = 768;
+const CAVE_REGION_EDGE = 0.2;
+const CAVE_REGION_CORE = 0.55;
+/** Density added to the large families outside cave regions */
+const CAVE_REGION_PENALTY = 1;
 
 /** Band of heights the 2D spaghetti passages wander through */
 const SPAGHETTI_2D_MIN_Y = 12;
@@ -372,18 +437,19 @@ function isCarved(
   // spaghetti_roughness_function = (-0.05 - 0.05 * mod) * (|rough| - 0.4)
   const rough = carver.roughness.get(wx, y, wz);
   const roughness =
-    (-0.05 - 0.05 * noise.noise2(Channel.CaveRoughness, wx / 256, wz / 256)) *
+    (-0.05 -
+      0.05 *
+        normalNoise(noise, Channel.CaveRoughness, [1], wx / 256, 0, wz / 256)) *
     (Math.abs(rough) - 0.4);
 
   // 3D spaghetti: max(|a|, |b|) - thickness, thickness in [0.065, 0.088]
-  // (`spaghetti_3d_thickness`), scaled by the user radius
+  // (`spaghetti_3d_thickness`, vanilla 0.0765 + 0.0115 * noise) scaled by
+  // the user radius
   const thick = carver.thickness.get(wx, y, wz);
   const a = Math.abs(carver.spaghettiA.get(wx, y, wz));
   const b = Math.abs(carver.spaghettiB.get(wx, y, wz));
   const spaghetti3d =
-    Math.max(a, b) -
-    (0.0765 + 0.0115 * thick) * (cv.spaghettiRadius / 0.0765) +
-    roughness;
+    Math.max(a, b) - (cv.spaghettiRadius + 0.0115 * thick) + roughness;
   if (spaghetti3d < -mouth) return true;
 
   // Entrances: cave_entrance + 0.37 + gradient. Blobs that are full size
@@ -429,14 +495,20 @@ function isCarved(
 
   // Cheese: cave_cheese + 0.27 + 4 * cave_layer^2 + near-surface penalty,
   // air where negative. `cheeseThreshold` replaces vanilla's 0.27 offset.
-  const layer = carver.caveLayer.get(wx, y, wz);
+  // cave_layer is a per-block noise (wavelength 8, y_scale 8) so its square
+  // only roughens the cavern walls; it is sampled after the cheap terms
+  // since it can only make the density more positive.
   const shellFade = clamp((depthBelow - SURFACE_SHELL) / 24, 0, 1);
+  const regionPenalty = CAVE_REGION_PENALTY * (1 - col.caveRegion);
   const cheese =
     carver.cheese.get(wx, y, wz) +
     cv.cheeseThreshold +
-    4 * layer * layer +
-    0.5 * (1 - shellFade);
-  if (cheese < 0) return true;
+    0.5 * (1 - shellFade) +
+    regionPenalty;
+  if (cheese < 0) {
+    const layer = normalNoise(noise, Channel.CaveLayer, [1], wx / 8, y, wz / 8);
+    if (cheese + 4 * layer * layer < 0) return true;
+  }
 
   // 2D spaghetti: a sheet of noise clipped to a slab around the column's
   // preferred elevation. thickness2d in [-1.3, -0.6] (units of 8 blocks)
@@ -445,7 +517,9 @@ function isCarved(
   const sheet = Math.abs(carver.spaghetti2d.get(wx, y, wz));
   const slab = Math.abs(y - col.caveElevation) / 8 + thickness2d;
   const spaghetti2d =
-    Math.max(sheet + 0.083 * thickness2d, slab * slab * slab) + roughness;
+    Math.max(sheet + 0.083 * thickness2d, slab * slab * slab) +
+    roughness +
+    regionPenalty;
   if (spaghetti2d < 0) return true;
 
   // Noodles: thin winding tunnels that stitch the systems together
@@ -512,69 +586,90 @@ export function generateChunkData(
   let carver: Carver | null = null;
   if (params.caves.enabled) {
     const cv = params.caves;
-    const rarity = (wx: number, wz: number) =>
-      (noise.noise2(Channel.SpaghettiRarity, wx / 1024, wz / 1024) + 1) * 0.5;
-    const tier = (r: number) => {
-      const f = clamp(r, 0, 0.999) * (RARITY_TIERS.length - 1);
-      const i = Math.floor(f);
-      const t = f - i;
-      return [
-        lerp(RARITY_TIERS[i][0], RARITY_TIERS[i + 1][0], t),
-        lerp(RARITY_TIERS[i][1], RARITY_TIERS[i + 1][1], t),
-      ];
-    };
+    // spaghetti_3d_rarity picks the tunnel wavelength per region
     const spaghetti = (ch: Channel) => (x: number, y: number, z: number) => {
-      const [wave, mul] = tier(rarity(x, z));
-      const s = cv.spaghettiScale * wave;
-      return noise.noise3(ch, x / s, y / s, z / s) * mul;
+      const r = rarityType1(
+        normalNoise(
+          noise,
+          Channel.SpaghettiRarity,
+          [1],
+          x / 1024,
+          0,
+          z / 1024
+        ) + SPAGHETTI_RARITY_BIAS
+      );
+      const s = cv.spaghettiScale * r;
+      return normalNoise(noise, ch, [1], x / s, y / s, z / s) * r;
     };
     // cave_cheese: octaves at 1, 1/2, 1/4, 1/8, 1/16 of the wavelength with
-    // vanilla's amplitude modifiers [0.5, 1, 2, 1, 2]
-    const cheese = (x: number, y: number, z: number) => {
-      let sum = 0;
-      let freq = 1 / cv.cheeseScale;
-      for (let i = 0; i < CHEESE_AMPLITUDES.length; i++) {
-        sum +=
-          CHEESE_AMPLITUDES[i] *
-          noise.noise3(Channel.Cheese, x * freq, y * freq * 1.5, z * freq);
-        freq *= 2;
-      }
-      return sum / CHEESE_NORM;
+    // vanilla's amplitude modifiers [0.5, 1, 2, 1, 2], y_scale 2/3
+    const cheese = (x: number, y: number, z: number) =>
+      normalNoise(
+        noise,
+        Channel.Cheese,
+        CHEESE_AMPLITUDES,
+        x / cv.cheeseScale,
+        (y * 2) / 3 / cv.cheeseScale,
+        z / cv.cheeseScale
+      );
+    // spaghetti_2d: rarity from `spaghetti_2d_modulator` (xz_scale 2 of a
+    // 1024 wavelength), same width but longer, sparser sheets when rare
+    const spaghetti2d = (x: number, y: number, z: number) => {
+      const r = rarityType2(
+        normalNoise(
+          noise,
+          Channel.Spaghetti2DModulator,
+          [1],
+          x / 512,
+          0,
+          z / 512
+        )
+      );
+      const s = 128 * r;
+      return (
+        normalNoise(noise, Channel.Spaghetti2D, [1], x / s, y / s, z / s) * r
+      );
     };
-    // cave_entrance: octaves 1, 1/2, 1/4 with modifiers [0.4, 0.5, 1],
-    // xz_scale 0.75 and y_scale 0.5 so the blobs are tall
+    // cave_entrance: octaves with modifiers [0.4, 0.5, 1], xz_scale 0.75
+    // and y_scale 0.5 so the blobs are tall
     const entrance = (x: number, y: number, z: number) =>
-      (0.4 * noise.noise3(Channel.Entrance, x / 170, y / 256, z / 170) +
-        0.5 * noise.noise3(Channel.Entrance, x / 85, y / 128, z / 85) +
-        noise.noise3(Channel.Entrance, x / 42.5, y / 64, z / 42.5)) /
-      1.9;
+      normalNoise(
+        noise,
+        Channel.Entrance,
+        ENTRANCE_AMPLITUDES,
+        x / 170,
+        y / 256,
+        z / 170
+      );
     const lattice = (sample: (x: number, y: number, z: number) => number) =>
       new Lattice(originX, originZ, w, size.height, sample);
     carver = {
       cheese: lattice(cheese),
-      caveLayer: lattice((x, y, z) =>
-        noise.noise3(Channel.CaveLayer, x / 256, y / 32, z / 256)
-      ),
       spaghettiA: lattice(spaghetti(Channel.SpaghettiA)),
       spaghettiB: lattice(spaghetti(Channel.SpaghettiB)),
       thickness: lattice((x, y, z) =>
-        noise.noise3(Channel.SpaghettiThickness, x / 256, y / 256, z / 256)
+        normalNoise(
+          noise,
+          Channel.SpaghettiThickness,
+          [1],
+          x / 256,
+          y / 256,
+          z / 256
+        )
       ),
-      spaghetti2d: lattice((x, y, z) =>
-        noise.noise3(Channel.Spaghetti2D, x / 128, y / 128, z / 128)
-      ),
+      spaghetti2d: lattice(spaghetti2d),
       roughness: lattice((x, y, z) =>
-        noise.noise3(Channel.CaveRoughness, x / 32, y / 32, z / 32)
+        normalNoise(noise, Channel.CaveRoughness, [1], x / 32, y / 32, z / 32)
       ),
       entrance: lattice(entrance),
       noodleA: lattice((x, y, z) =>
-        noise.noise3(Channel.NoodleA, x / 48, y / 48, z / 48)
+        normalNoise(noise, Channel.NoodleA, [1], x / 48, y / 48, z / 48)
       ),
       noodleB: lattice((x, y, z) =>
-        noise.noise3(Channel.NoodleB, x / 48, y / 48, z / 48)
+        normalNoise(noise, Channel.NoodleB, [1], x / 48, y / 48, z / 48)
       ),
       noodleGate: lattice((x, y, z) =>
-        noise.noise3(Channel.Noodle, x / 128, y / 128, z / 128)
+        normalNoise(noise, Channel.Noodle, [1], x / 128, y / 128, z / 128)
       ),
     };
     carveCaves(
@@ -862,6 +957,113 @@ function placeBlob(
   }
 }
 
+/**
+ * Vanilla `OreFeature.doPlace`: `size` spheres strung along a short random
+ * line, each with radius ((sin(pi t) + 1) * rand * size / 16 + 1) / 2, so
+ * `size` bounds the vein's extent rather than its block count (a size-4
+ * diamond vein is usually 1-3 blocks). Spheres fully inside another are
+ * dropped, and with a discard chance an ore next to air is skipped.
+ */
+function placeVein(
+  size: ChunkSize,
+  rng: RNG,
+  data: Uint8Array,
+  cx: number,
+  cy: number,
+  cz: number,
+  veinSize: number,
+  id: BlockID,
+  discardOnAir: number
+) {
+  const angle = rng.random() * Math.PI;
+  const half = veinSize / 8;
+  const x0 = cx + Math.sin(angle) * half;
+  const x1 = cx - Math.sin(angle) * half;
+  const z0 = cz + Math.cos(angle) * half;
+  const z1 = cz - Math.cos(angle) * half;
+  const y0 = cy + Math.floor(rng.random() * 3) - 2;
+  const y1 = cy + Math.floor(rng.random() * 3) - 2;
+  const spheres = new Float64Array(veinSize * 4);
+  for (let k = 0; k < veinSize; k++) {
+    const t = k / veinSize;
+    const scale = (rng.random() * veinSize) / 16;
+    spheres[k * 4] = lerp(x0, x1, t);
+    spheres[k * 4 + 1] = lerp(y0, y1, t);
+    spheres[k * 4 + 2] = lerp(z0, z1, t);
+    spheres[k * 4 + 3] = ((Math.sin(Math.PI * t) + 1) * scale + 1) / 2;
+  }
+  for (let k = 0; k < veinSize; k++) {
+    const rk = spheres[k * 4 + 3];
+    if (rk < 0) continue;
+    for (let l = k + 1; l < veinSize; l++) {
+      const rl = spheres[l * 4 + 3];
+      if (rl < 0) continue;
+      const dx = spheres[k * 4] - spheres[l * 4];
+      const dy = spheres[k * 4 + 1] - spheres[l * 4 + 1];
+      const dz = spheres[k * 4 + 2] - spheres[l * 4 + 2];
+      if ((rk - rl) * (rk - rl) > dx * dx + dy * dy + dz * dz) {
+        if (rk > rl) spheres[l * 4 + 3] = -1;
+        else spheres[k * 4 + 3] = -1;
+      }
+    }
+  }
+  const w = size.width;
+  for (let k = 0; k < veinSize; k++) {
+    const r = spheres[k * 4 + 3];
+    if (r < 0) continue;
+    const sx = spheres[k * 4];
+    const sy = spheres[k * 4 + 1];
+    const sz = spheres[k * 4 + 2];
+    const xMin = Math.max(0, Math.floor(sx - r));
+    const xMax = Math.min(w - 1, Math.floor(sx + r));
+    const yMin = Math.max(1, Math.floor(sy - r));
+    const yMax = Math.min(size.height - 1, Math.floor(sy + r));
+    const zMin = Math.max(0, Math.floor(sz - r));
+    const zMax = Math.min(w - 1, Math.floor(sz + r));
+    for (let x = xMin; x <= xMax; x++) {
+      const fx = (x + 0.5 - sx) / r;
+      if (fx * fx >= 1) continue;
+      for (let y = yMin; y <= yMax; y++) {
+        const fy = (y + 0.5 - sy) / r;
+        if (fx * fx + fy * fy >= 1) continue;
+        for (let z = zMin; z <= zMax; z++) {
+          const fz = (z + 0.5 - sz) / r;
+          if (fx * fx + fy * fy + fz * fz >= 1) continue;
+          const i = blockIndex(size, x, y, z);
+          if (!isStone(data[i])) continue;
+          if (
+            discardOnAir > 0 &&
+            (discardOnAir >= 1 || rng.random() < discardOnAir) &&
+            touchesAir(size, data, x, y, z)
+          )
+            continue;
+          data[i] = id;
+        }
+      }
+    }
+  }
+}
+
+/** Whether any of the six neighbours inside this chunk is air */
+function touchesAir(
+  size: ChunkSize,
+  data: Uint8Array,
+  x: number,
+  y: number,
+  z: number
+): boolean {
+  const w = size.width;
+  return (
+    (x > 0 && data[blockIndex(size, x - 1, y, z)] === BlockID.Air) ||
+    (x < w - 1 && data[blockIndex(size, x + 1, y, z)] === BlockID.Air) ||
+    (y > 0 && data[blockIndex(size, x, y - 1, z)] === BlockID.Air) ||
+    (y < size.height - 1 &&
+      data[blockIndex(size, x, y + 1, z)] === BlockID.Air) ||
+    (z > 0 && data[blockIndex(size, x, y, z - 1)] === BlockID.Air) ||
+    (z < w - 1 && data[blockIndex(size, x, y, z + 1)] === BlockID.Air)
+  );
+}
+
 const isStone = (id: BlockID) => id === BlockID.Stone;
 
 /** Dirt and gravel pockets inside the stone */
@@ -886,6 +1088,15 @@ function placePatches(
   }
 }
 
+/** Samples a vanilla `height_range`: uniform, or trapezoid (sum of two uniforms) */
+function sampleHeight(rng: RNG, h: OreHeight): number {
+  const span = h.max - h.min + 1;
+  if (h.kind === "uniform") return h.min + Math.floor(rng.random() * span);
+  const a = Math.floor(rng.random() * span);
+  const b = Math.floor(rng.random() * span);
+  return h.min + Math.floor((a + b) / 2);
+}
+
 function placeOres(
   size: ChunkSize,
   params: WorldParams,
@@ -893,14 +1104,16 @@ function placeOres(
   data: Uint8Array
 ) {
   const w = size.width;
-  for (const ore of Object.values(oreConfig)) {
-    const attempts = Math.round(ore.attempts * params.ores.density);
-    const maxY = Math.min(ore.maxY, size.height - 1);
+  for (const ore of oreFeatures) {
+    const scaled = ore.count * params.ores.density;
+    const attempts =
+      scaled < 1 ? (rng.random() < scaled ? 1 : 0) : Math.round(scaled);
     for (let i = 0; i < attempts; i++) {
       const x = Math.floor(rng.random() * w);
       const z = Math.floor(rng.random() * w);
-      const y = ore.minY + Math.floor(rng.random() * (maxY - ore.minY + 1));
-      placeBlob(size, rng, data, x, y, z, ore.size, ore.id, isStone);
+      const y = sampleHeight(rng, ore.height);
+      if (y < 1 || y >= size.height) continue;
+      placeVein(size, rng, data, x, y, z, ore.size, ore.id, ore.discard);
     }
   }
 }

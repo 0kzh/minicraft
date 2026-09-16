@@ -44,10 +44,10 @@ export class World extends THREE.Group implements FluidWorld {
     caves: {
       enabled: true,
       cheeseScale: 256,
-      cheeseThreshold: 0.12,
+      cheeseThreshold: 0.27,
       spaghettiScale: 128,
-      spaghettiRadius: 0.09,
-      entranceThreshold: 0.4,
+      spaghettiRadius: 0.0765,
+      entranceThreshold: 0.5,
       lavaLevel: 10,
       ravines: true,
       entrances: true,
